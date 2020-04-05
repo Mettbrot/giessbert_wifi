@@ -1,0 +1,18 @@
+sum up all watering amounts. (send to webserver daily? (-->not lost after power cycle))
+
+loop
+{
+    if wifi connection lost -> reconnect
+
+    client connected to webserver? serve page (watering amounts, weather data, total watered amounts), act on commands (GET): water now (per plant/all), turn on lights (until midnight), vacation mode?
+    
+    call weather API before sunrise (~4 ?), save data for next 2 days, calculate todays watering amount. Water at sunrise. if over maximum per session, we water again in the afternoon (16?) we call weather API before and calculate again.
+    
+    calculate watering amount per plant: amount = min + (max-min)*(0.5*(1-cloud_percentage) + 0.5*(1-humidity_percentage))*(temp/15)*((sundown-sunrise)/12)
+    
+    if no weather data - water standard amount (50%?) at sunrise (6?)
+
+    every hour - API call -> save current time and milliseconds to sync: last_time last_millis
+
+    at sundown: turn on lights until midnight ;)
+}
