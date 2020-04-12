@@ -1,21 +1,25 @@
+#ifndef LOGGING_H
+#define LOGGING_H
+
 #include <cstdint>
 #include <cstddef>
 
-class Serial;
+#include "Arduino.h"
 
-class Logger
+class Logging
 {
 private:
-    Serial* serial = nullptr;
-    unsigned long time_offset;
-    char log[2^16] = {0};
-    std::uint16_t p_log = 0;
-    bool print_date = true;
+    unsigned long _time_offset;
+    char _log[2^16] = {0};
+    std::uint16_t _p_log = 0;
+    bool _print_date = true;
 
 public:
-    Logger(const Serial* _serial, const unsigned long _time_offset);
-    ~Logger();
+    Logging(const unsigned long time_offset);
+    ~Logging();
     size_t println(const char* str);
     size_t print(const char* str);
     size_t write(const char* str);
 };
+
+#endif
