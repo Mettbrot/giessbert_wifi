@@ -6,7 +6,7 @@
 #include <cstring>
 
 
-Logging::Logging(const unsigned long time_offset) : _time_offset(time_offset)
+Logging::Logging(Stream* ser, const unsigned long time_offset) : _ser(ser), _time_offset(time_offset)
 {
 }
 
@@ -44,9 +44,9 @@ size_t Logging::write(const char* str)
     }
     std::strcpy(_log+_p_log, str);
 
-    if(Serial)
+    if(_ser)
     {
-        return Serial.write(str);
+        return _ser->write(str);
     }
     else
     {
