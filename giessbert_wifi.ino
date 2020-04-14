@@ -20,15 +20,17 @@
 int wifi_status = WL_IDLE_STATUS;
 
 // Initialize the Wifi client library
-WiFiClient apiclient;
+WiFiClient api_client;
 
 // server address:
 char apiserver[] = "https://api.openweathermap.org/data/2.5/onecall?units=metric";
 
 StaticJsonDocument<26000> doc;
 
-unsigned long lastConnectionTime = 0;            // last time you connected to the server, in milliseconds
-const unsigned long postingInterval = 10L * 1000L; // delay between updates, in milliseconds
+
+unsigned long api_lastConnectionTime = 0;            // last time you connected to the server, in milliseconds
+unsigned long api_lastEpochTime = 0;
+//const unsigned long postingInterval = 10L * 1000L; // delay between updates, in milliseconds
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
@@ -83,17 +85,17 @@ void loop()
 
   
   // listen for incoming clients
-  WiFiClient webclient = webserver.available();
-  if (webclient)
+  WiFiClient webserver_client = webserver.available();
+  if (webserver_client)
   {
-    Serial.println("new webclient");
+    Serial.println("new webserver client");
     // an http request ends with a blank line
     bool currentLineIsBlank = true;
-    while (webclient.connected())
+    while (webserver_client.connected())
     {
-      if (webclient.available())
+      if (webserver_client.available())
       {
-        char c = webclient.read();
+        char c = webserver_client.read();
         Serial.write(c);
         // if you've gotten to the end of the line (received a newline
         // character) and the line is blank, the http request has ended,
@@ -101,31 +103,33 @@ void loop()
         if (c == '\n' && currentLineIsBlank)
         {
           // send a standard http response header
-          webclient.println("HTTP/1.1 200 OK");
-          webclient.println("Content-Type: text/html");
-          webclient.println("Connection: close");  // the connection will be closed after completion of the response
-          webclient.println("Refresh: 5");  // refresh the page automatically every 5 sec
-          webclient.println();
-          webclient.println("<!DOCTYPE HTML>");
-          webclient.println("<html>");
+          webserver_client.println("HTTP/1.1 200 OK");
+          webserver_client.println("Content-Type: text/html");
+          webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
+          //webserver_client.println("Refresh: 5");  // refresh the page automatically every 5 sec
+          webserver_client.println();
+          webserver_client.println("<!DOCTYPE HTML>");
+          webserver_client.println("<html>");
           // output the value of each analog input pin
           for (int analogChannel = 0; analogChannel < 6; analogChannel++)
           {
             int sensorReading = analogRead(analogChannel);
-            webclient.print("analog input ");
-            webclient.print(analogChannel);
-            webclient.print(" is ");
-            webclient.print(sensorReading);
-            webclient.println("<br />");
+            webserver_client.print("analog input ");
+            webserver_client.print(analogChannel);
+            webserver_client.print(" is ");
+            webserver_client.print(sensorReading);
+            webserver_client.println("<br />");
           }
-          webclient.println("</html>");
+          
+          webserver_client.println("</html>");
           break;
         }
         if (c == '\n')
         {
           // you're starting a new line
           currentLineIsBlank = true;
-        } else if (c != '\r')
+        }
+        else if (c != '\r')
         {
           // you've gotten a character on the current line
           currentLineIsBlank = false;
@@ -136,17 +140,17 @@ void loop()
     delay(1);
 
     // close the connection:
-    webclient.stop();
-    Serial.println("webclient disonnected");
+    webserver_client.stop();
+    Serial.println("webserver client disonnected");
 
   }
   
   // if there's incoming data from the net connection.
   // send it out the serial port.  This is for debugging
   // purposes only:
-  while (apiclient.available())
+  while (api_client.available())
   {
-    char c = apiclient.read();
+    char c = api_client.read();
     Serial.write(c);
   }
 
@@ -160,18 +164,18 @@ void httpRequest()
 {
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
-  apiclient.stop();
+  api_client.stop();
 
   // if there's a successful connection:
-  if (apiclient.connect(apiserver, 80))
+  if (api_client.connect(apiserver, 80))
   {
     Serial.println("connecting...");
     // send the HTTP PUT request:
-    apiclient.println("GET /latest.txt HTTP/1.1");
-    apiclient.println(String("Host: ") + String(apiserver) + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey));
-    apiclient.println("User-Agent: ArduinoWiFi/1.1");
-    apiclient.println("Connection: close");
-    apiclient.println();
+    api_client.println("GET /latest.txt HTTP/1.1");
+    api_client.println(String("Host: ") + String(apiserver) + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey));
+    api_client.println("User-Agent: ArduinoWiFi/1.1");
+    api_client.println("Connection: close");
+    api_client.println();
 
     // note the time that the connection was made:
     lastConnectionTime = millis();
