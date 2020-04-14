@@ -10,7 +10,7 @@
 */
 
 #include <SPI.h>
-#include <WiFi.h>
+#include <WiFiNINA.h>
 #include <ArduinoJson.h>
 
 
@@ -25,7 +25,7 @@ WiFiClient api_client;
 Logging logger(&Serial, 3000);
 
 // server address:
-char apiserver[] = "https://api.openweathermap.org/data/2.5/onecall?units=metric";
+char apiserver[] = "api.openweathermap.org";
 
 StaticJsonDocument<26000> doc;
 
@@ -46,16 +46,8 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  // check for the presence of the shield:
-  if (WiFi.status() == WL_NO_SHIELD)
-  {
-    Serial.println("WiFi shield not present");
-    // don't continue:
-    while (true);
-  }
-
   String fv = WiFi.firmwareVersion();
-  if (fv != "1.1.0")
+  if (fv != "1.3.0")
   {
     Serial.println("Please upgrade the firmware");
   }
@@ -74,7 +66,6 @@ void loop()
     Serial.println(ssid);
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     wifi_status = WiFi.begin(ssid, pass);
-
     // wait 10 seconds for connection:
     delay(10000); // TODO remove this!
   }
@@ -83,6 +74,8 @@ void loop()
     // you're connected now, so print out the status:
     printWifiStatus();
     wifi_noConnection = false;
+    //begin listeling
+    webserver.begin();
   }
 
   
@@ -156,10 +149,14 @@ void loop()
     Serial.write(c);
   }
 
-  // send out request to weather API
-  httpRequest();
-
+  if(api_lastConnectionTime  < (double)millis() - 100000.0)
+  {
+    Serial.println(api_lastConnectionTime);
+    // send out request to weather API
+    httpRequest();
+  } 
 }
+
 
 // this method makes a HTTP connection to the server:
 void httpRequest()
@@ -169,18 +166,18 @@ void httpRequest()
   api_client.stop();
 
   // if there's a successful connection:
-  if (api_client.connect(apiserver, 80))
+  if (api_client.connectSSL(apiserver, 443))
   {
     Serial.println("connecting...");
     // send the HTTP PUT request:
-    api_client.println("GET /latest.txt HTTP/1.1");
-    api_client.println(String("Host: ") + String(apiserver) + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey));
+    api_client.println(String("GET /data/2.5/onecall?units=metric") + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey) + String(" HTTP/1.1"));
+    api_client.println(String("Host: ") + String(apiserver));
     api_client.println("User-Agent: ArduinoWiFi/1.1");
     api_client.println("Connection: close");
     api_client.println();
 
     // note the time that the connection was made:
-    lastConnectionTime = millis();
+    api_lastConnectionTime = millis();
   }
   else
   {
