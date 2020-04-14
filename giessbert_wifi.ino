@@ -15,12 +15,14 @@
 
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
-
+#include "logging.h"
 
 int wifi_status = WL_IDLE_STATUS;
 
 // Initialize the Wifi client library
 WiFiClient api_client;
+
+Logging logger(&Serial, 3000);
 
 // server address:
 char apiserver[] = "https://api.openweathermap.org/data/2.5/onecall?units=metric";
@@ -74,7 +76,7 @@ void loop()
     wifi_status = WiFi.begin(ssid, pass);
 
     // wait 10 seconds for connection:
-    delay(10000);
+    delay(10000); // TODO remove this!
   }
   if(wifi_status == WL_CONNECTED && wifi_noConnection)
   {
