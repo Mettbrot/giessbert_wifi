@@ -18,6 +18,8 @@ private:
 public:
     Logging(Stream* ser, const unsigned long time_offset);
     ~Logging();
+    void setOffset(unsigned long offset);
+    const char* getLog() const;
     size_t println(const char* str);
     size_t print(const char* str);
     size_t write(const char* str);

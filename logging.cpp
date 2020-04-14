@@ -14,6 +14,17 @@ Logging::~Logging()
 {
 }
 
+
+void Logging::setOffset(unsigned long offset)
+{
+    _time_offset = offset;
+}
+
+const char* Logging::getLog() const
+{
+    return _log;
+}
+
 size_t Logging::println(const char* str)
 {
     size_t ret = print(str) + print("\r\n");
