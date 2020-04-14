@@ -16,8 +16,11 @@
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 #include "logging.h"
+#include "plant.h"
 
 int wifi_status = WL_IDLE_STATUS;
+
+#define ANALOG_CHANNELS 8
 
 // Initialize the Wifi client library
 WiFiClient api_client;
@@ -29,6 +32,7 @@ char apiserver[] = "api.openweathermap.org";
 
 StaticJsonDocument<26000> doc;
 
+Plant* plants[ANALOG_CHANNELS] = {NULL};
 
 unsigned long api_lastConnectionTime = 0;            // last time you connected to the server, in milliseconds
 unsigned long api_lastEpochTime = 0;
@@ -52,6 +56,10 @@ void setup()
     Serial.println("Please upgrade the firmware");
   }
 
+//setup plants
+plants[1] = new Plant("Cherrytomate 1", 600, 1300);
+plants[2] = new Plant("Rispentomate 1", 400, 1700);
+
 }
 
 void loop()
@@ -74,7 +82,7 @@ void loop()
     // you're connected now, so print out the status:
     printWifiStatus();
     wifi_noConnection = false;
-    //begin listeling
+    //begin listening
     webserver.begin();
   }
 
@@ -97,26 +105,7 @@ void loop()
         // so you can send a reply
         if (c == '\n' && currentLineIsBlank)
         {
-          // send a standard http response header
-          webserver_client.println("HTTP/1.1 200 OK");
-          webserver_client.println("Content-Type: text/html");
-          webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
-          //webserver_client.println("Refresh: 5");  // refresh the page automatically every 5 sec
-          webserver_client.println();
-          webserver_client.println("<!DOCTYPE HTML>");
-          webserver_client.println("<html>");
-          // output the value of each analog input pin
-          for (int analogChannel = 0; analogChannel < 6; analogChannel++)
-          {
-            int sensorReading = analogRead(analogChannel);
-            webserver_client.print("analog input ");
-            webserver_client.print(analogChannel);
-            webserver_client.print(" is ");
-            webserver_client.print(sensorReading);
-            webserver_client.println("<br />");
-          }
-          
-          webserver_client.println("</html>");
+          printWebPage(webserver_client);
           break;
         }
         if (c == '\n')
@@ -155,6 +144,14 @@ void loop()
     // send out request to weather API
     httpRequest();
   } 
+  if(analogRead(A0) > 900)
+  {
+    digitalWrite(6, HIGH);
+  }
+  else
+  {
+    digitalWrite(6, LOW);
+  }
 }
 
 
@@ -203,4 +200,86 @@ void printWifiStatus()
   Serial.print("signal strength (RSSI):");
   Serial.print(rssi);
   Serial.println(" dBm");
+}
+
+void printWebPage(WiFiClient& webserver_client)
+{
+  // send a standard http response header
+  webserver_client.println("HTTP/1.1 200 OK");
+  webserver_client.println("Content-Type: text/html");
+  webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
+  webserver_client.println();
+
+    webserver_client.println("<!DOCTYPE HTML>");
+    webserver_client.println("<html>");
+    webserver_client.println("<head>");
+    webserver_client.println("<meta charset=\"utf-8\">");
+    webserver_client.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+    webserver_client.println("</head>");
+    webserver_client.println("<h1>Gießbert 4.0</h1>");
+    webserver_client.println("<form method=\"get\" action=\"\">");
+    webserver_client.println("");
+    webserver_client.println("<table style=\"border:0px\">");
+    webserver_client.println("<tr>");
+    webserver_client.println("<td>Date & Time</td><td>09.04.2020 17:36</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.println("<td>Weather today</td><td>25°C, clouds 56%, humidity 34%</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.println("<td>Weather tomorrow</td><td>20°C, clouds 2%, humidity 69%</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.print("<td>WiFi Status </td><td>");
+    // print the received signal strength:
+    long rssi = WiFi.RSSI();
+    webserver_client.print("signal strength (RSSI):");
+    webserver_client.print(rssi);
+    webserver_client.println(" dBm</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.println("<td>Lights </td><td><button type=\"submit\" name=\"lights\" value=\"on\">ON</button><button type=\"submit\" name=\"lights\" value=\"off\">OFF</button></td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("</table>");
+    webserver_client.println(analogRead(A0));
+    webserver_client.println("<br />");
+    webserver_client.println("<table style=\"border:0px;text-align:center;\">");
+    webserver_client.println("<tr style=\"font-weight:bold\">");
+    webserver_client.println("<td>Port</td><td>Plant</td><td>Water today [ml]</td><td>Water total [l]</td><td>Action</td>");
+    webserver_client.println("</tr>");
+    for(int i = 0; i < ANALOG_CHANNELS; ++i)
+    {
+      if(plants[i] == NULL)
+      {
+        continue;
+      }
+      webserver_client.println("<tr>");
+      webserver_client.print("<td>");
+      webserver_client.print(i);
+      webserver_client.print("</td><td>");
+      webserver_client.print(plants[i]->getName());
+      webserver_client.print("</td><td>");
+      webserver_client.print(plants[i]->getDailyWater());
+      webserver_client.print("</td><td>");
+      webserver_client.print(plants[i]->getTotalWater());
+      webserver_client.print("</td><td><button type=\"submit\" name=\"water200\" value=\"");
+      webserver_client.print(i);
+      webserver_client.println("\">Water 200ml</button></td>");
+      webserver_client.println("</tr>");
+    }
+    webserver_client.println("</table>");
+    webserver_client.println("</form>");
+    webserver_client.println("</html>");
+    /*
+  // output the value of each analog input pin
+  for (int analogChannel = 0; analogChannel < 6; analogChannel++)
+  {
+    int sensorReading = analogRead(analogChannel);
+    webserver_client.print("analog input ");
+    webserver_client.print(analogChannel);
+    webserver_client.print(" is ");
+    webserver_client.print(sensorReading);
+    webserver_client.println("<br />");
+  }
+  */
 }
