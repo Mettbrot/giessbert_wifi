@@ -11,7 +11,7 @@ class Logging
 private:
     Stream* _ser;
     unsigned long _time_offset;
-    char _log[2^16] = {0};
+    char _log[1<<16] = {0};
     std::uint16_t _p_log = 0;
     bool _print_date = true;
 
