@@ -21,7 +21,10 @@ public:
     void setOffset(unsigned long offset);
     const char* getLog() const;
     size_t println(const char* str);
+    size_t println(const double doubl);
     size_t print(const char* str);
+    size_t print(const double doubl);
+    size_t write(const char c);
     size_t write(const char* str);
 };
 

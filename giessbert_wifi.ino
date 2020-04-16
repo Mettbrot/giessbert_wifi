@@ -13,6 +13,7 @@
 #include <WiFiNINA.h>
 #include <ArduinoJson.h>
 
+#include <cstring>
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 #include "logging.h"
@@ -45,7 +46,7 @@ void setup()
 {
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
-  while (!Serial)
+  //while (!Serial)
   {
     ; // wait for serial port to connect. Needed for native USB port only
   }
@@ -53,7 +54,7 @@ void setup()
   String fv = WiFi.firmwareVersion();
   if (fv != "1.3.0")
   {
-    Serial.println("Please upgrade the firmware");
+    logger.println("Please upgrade the firmware");
   }
 
 //setup plants
@@ -70,8 +71,8 @@ void loop()
   {
     ++wifi_retry_count;
     wifi_noConnection = true;
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(ssid);
+    logger.print("Attempting to connect to SSID: ");
+    logger.println(ssid);
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -91,7 +92,7 @@ void loop()
   WiFiClient webserver_client = webserver.available();
   if (webserver_client)
   {
-    Serial.println("new webserver client");
+    logger.println("new webserver client");
     // an http request ends with a blank line
     bool currentLineIsBlank = true;
     while (webserver_client.connected())
@@ -99,7 +100,7 @@ void loop()
       if (webserver_client.available())
       {
         char c = webserver_client.read();
-        Serial.write(c);
+        logger.write(c);
         // if you've gotten to the end of the line (received a newline
         // character) and the line is blank, the http request has ended,
         // so you can send a reply
@@ -125,7 +126,7 @@ void loop()
 
     // close the connection:
     webserver_client.stop();
-    Serial.println("webserver client disonnected");
+    logger.println("webserver client disonnected");
 
   }
   
@@ -135,12 +136,12 @@ void loop()
   while (api_client.available())
   {
     char c = api_client.read();
-    Serial.write(c);
+    logger.write(c);
   }
 
   if(api_lastConnectionTime  < (double)millis() - 100000.0)
   {
-    Serial.println(api_lastConnectionTime);
+    logger.println(api_lastConnectionTime);
     // send out request to weather API
     httpRequest();
   } 
@@ -165,7 +166,7 @@ void httpRequest()
   // if there's a successful connection:
   if (api_client.connectSSL(apiserver, 443))
   {
-    Serial.println("connecting...");
+    logger.println("connecting...");
     // send the HTTP PUT request:
     api_client.println(String("GET /data/2.5/onecall?units=metric") + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey) + String(" HTTP/1.1"));
     api_client.println(String("Host: ") + String(apiserver));
@@ -179,7 +180,7 @@ void httpRequest()
   else
   {
     // if you couldn't make a connection:
-    Serial.println("connection failed");
+    logger.println("connection failed");
   }
 }
 
@@ -187,19 +188,19 @@ void httpRequest()
 void printWifiStatus()
 {
   // print the SSID of the network you're attached to:
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
+  logger.print("SSID: ");
+  logger.println(WiFi.SSID());
 
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
+  logger.print("IP Address: ");
+  logger.println(String(String(ip[0]) + "." + ip[1] + "." + ip[2] + "." + ip[3]).c_str());
 
   // print the received signal strength:
   long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
+  logger.print("signal strength (RSSI):");
+  logger.print(rssi);
+  logger.println(" dBm");
 }
 
 void printWebPage(WiFiClient& webserver_client)
@@ -267,7 +268,12 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.println("\">Water 200ml</button></td>");
       webserver_client.println("</tr>");
     }
+    Serial.println(std::strlen(logger.getLog()));
+    Serial.println(logger.getLog());
     webserver_client.println("</table>");
+    webserver_client.println("<textarea>");
+    //webserver_client.println(logger.getLog());
+    webserver_client.println("</textarea>");
     webserver_client.println("</form>");
     webserver_client.println("</html>");
     /*

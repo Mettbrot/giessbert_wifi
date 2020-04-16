@@ -32,18 +32,33 @@ size_t Logging::println(const char* str)
     return ret;
 }
 
+size_t Logging::println(const double doubl)
+{
+    char number[100] = {0};
+    std::sprintf(number, "%d", doubl);
+    return println(number);
+}
+
 size_t Logging::print(const char* str)
 {
     size_t ret = 0;
     if(_print_date)
     {
-        char date[12];
+        char date[12] = {0};
         std::sprintf(date, "%u: ", _time_offset+(millis()/1000));
         ret += write(date);
         _print_date = false;
     }
     ret += write(str);
     return ret;
+}
+
+
+size_t Logging::print(const double doubl)
+{
+    char number[100] = {0};
+    std::sprintf(number, "%d", doubl);
+    return print(number);
 }
 
 size_t Logging::write(const char* str)
@@ -63,4 +78,12 @@ size_t Logging::write(const char* str)
     {
         return len;
     }
+}
+
+
+size_t Logging::write(const char c)
+{
+    char ch[2] = {0};
+    ch[0] = c;
+    return write(&ch[0]);
 }
