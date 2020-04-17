@@ -28,10 +28,12 @@ WiFiClient api_client;
 
 Logging logger(&Serial, 3000);
 
+
 // server address:
 char apiserver[] = "api.openweathermap.org";
 
-StaticJsonDocument<26000> doc;
+//StaticJsonDocument<26000> doc;
+char* const api_response = static_cast<char*>(malloc(20000));
 
 Plant* plants[ANALOG_CHANNELS] = {NULL};
 
@@ -51,16 +53,12 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  String fv = WiFi.firmwareVersion();
-  if (fv != "1.3.0")
-  {
-    logger.println("Please upgrade the firmware");
-  }
-
 //setup plants
 plants[1] = new Plant("Cherrytomate 1", 600, 1300);
 plants[2] = new Plant("Rispentomate 1", 400, 1700);
 
+analogReadResolution(12);
+memset(api_response, 0, 20000);
 }
 
 void loop()
@@ -71,8 +69,8 @@ void loop()
   {
     ++wifi_retry_count;
     wifi_noConnection = true;
-    logger.print("Attempting to connect to SSID: ");
-    logger.println(ssid);
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -92,7 +90,7 @@ void loop()
   WiFiClient webserver_client = webserver.available();
   if (webserver_client)
   {
-    logger.println("new webserver client");
+    logger.println("wc_c");
     // an http request ends with a blank line
     bool currentLineIsBlank = true;
     while (webserver_client.connected())
@@ -100,7 +98,7 @@ void loop()
       if (webserver_client.available())
       {
         char c = webserver_client.read();
-        logger.write(c);
+        Serial.write(c);
         // if you've gotten to the end of the line (received a newline
         // character) and the line is blank, the http request has ended,
         // so you can send a reply
@@ -126,33 +124,38 @@ void loop()
 
     // close the connection:
     webserver_client.stop();
-    logger.println("webserver client disonnected");
+    logger.println("wc_d");
 
   }
   
   // if there's incoming data from the net connection.
   // send it out the serial port.  This is for debugging
   // purposes only:
+  if(api_client.available())
+  {
+    logger.println("api_i");
+  }
+  int pos = 0;
   while (api_client.available())
   {
     char c = api_client.read();
-    logger.write(c);
+    if(pos >= 20000)
+    {
+      break;
+    }
+    api_response[pos] = c;
+    ++pos;
+    Serial.write(c);
   }
+  
 
-  if(api_lastConnectionTime  < (double)millis() - 100000.0)
+  if(api_lastConnectionTime  < (double)millis() - 20000.0)
   {
-    logger.println(api_lastConnectionTime);
+    logger.println("api_r");
     // send out request to weather API
     httpRequest();
-  } 
-  if(analogRead(A0) > 900)
-  {
-    digitalWrite(6, HIGH);
   }
-  else
-  {
-    digitalWrite(6, LOW);
-  }
+
 }
 
 
@@ -161,15 +164,34 @@ void httpRequest()
 {
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
+  memset(api_response, 0, 20000);
   api_client.stop();
 
   // if there's a successful connection:
   if (api_client.connectSSL(apiserver, 443))
   {
-    logger.println("connecting...");
+    Serial.println("connecting...");
     // send the HTTP PUT request:
-    api_client.println(String("GET /data/2.5/onecall?units=metric") + String("&lat=") + String(lat) + String("&lon=") + String(lon) + String("&appid=") + String(apiKey) + String(" HTTP/1.1"));
-    api_client.println(String("Host: ") + String(apiserver));
+    char adr[120] = {0};
+    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
+    int pos = strlen("GET /data/2.5/onecall?units=metric&lat=");
+    strcpy(adr+pos, lat);
+    pos += strlen(lat);
+    strcpy(adr+pos, "&lon=");
+    pos += strlen("&lon=");
+    strcpy(adr+pos, lon);
+    pos += strlen(lon);
+    strcpy(adr+pos, "&appid=");
+    pos += strlen("&appid=");
+    strcpy(adr+pos, apiKey);
+    pos += strlen(apiKey);
+    strcpy(adr+pos, " HTTP/1.1");
+    Serial.println(adr);
+
+    char serv[] = "Host: api.openweathermap.org";
+
+    api_client.println(adr);
+    api_client.println(serv);
     api_client.println("User-Agent: ArduinoWiFi/1.1");
     api_client.println("Connection: close");
     api_client.println();
@@ -180,7 +202,7 @@ void httpRequest()
   else
   {
     // if you couldn't make a connection:
-    logger.println("connection failed");
+    Serial.println("connection failed");
   }
 }
 
@@ -188,28 +210,28 @@ void httpRequest()
 void printWifiStatus()
 {
   // print the SSID of the network you're attached to:
-  logger.print("SSID: ");
-  logger.println(WiFi.SSID());
+  logger.println("wf_c");
+  Serial.println(WiFi.SSID());
 
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
-  logger.print("IP Address: ");
-  logger.println(String(String(ip[0]) + "." + ip[1] + "." + ip[2] + "." + ip[3]).c_str());
+  Serial.print("IP Address: ");
+  Serial.println(ip);
 
   // print the received signal strength:
   long rssi = WiFi.RSSI();
-  logger.print("signal strength (RSSI):");
-  logger.print(rssi);
-  logger.println(" dBm");
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
 }
 
 void printWebPage(WiFiClient& webserver_client)
 {
-  // send a standard http response header
-  webserver_client.println("HTTP/1.1 200 OK");
-  webserver_client.println("Content-Type: text/html");
-  webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
-  webserver_client.println();
+    // send a standard http response header
+    webserver_client.println("HTTP/1.1 200 OK");
+    webserver_client.println("Content-Type: text/html");
+    webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
+    webserver_client.println();
 
     webserver_client.println("<!DOCTYPE HTML>");
     webserver_client.println("<html>");
@@ -268,11 +290,19 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.println("\">Water 200ml</button></td>");
       webserver_client.println("</tr>");
     }
-    Serial.println(std::strlen(logger.getLog()));
-    Serial.println(logger.getLog());
     webserver_client.println("</table>");
     webserver_client.println("<textarea>");
-    //webserver_client.println(logger.getLog());
+    webserver_client.println(logger.getLog());
+    webserver_client.println("</textarea>");
+    webserver_client.println("<textarea>");
+    //feed big data slowly to the bus:
+    for(int i = 0; i <= strlen(api_response)/2048; ++i)
+    {
+      char tmp[2049] = {0};
+      strncpy(tmp,  api_response+(i*2048), 2048);
+      webserver_client.print(tmp);
+    }
+    webserver_client.println();
     webserver_client.println("</textarea>");
     webserver_client.println("</form>");
     webserver_client.println("</html>");

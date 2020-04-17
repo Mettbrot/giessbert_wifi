@@ -64,7 +64,7 @@ size_t Logging::print(const double doubl)
 size_t Logging::write(const char* str)
 {
     size_t len = std::strlen(str);
-    if((_p_log + len + 1) > ((1<<16) - 2)) //make sure last symbol is always terminating \0
+    if((_p_log + len + 1) > ((1<<10) - 2)) //make sure last symbol is always terminating \0
     {
         _p_log = 0;
     }
