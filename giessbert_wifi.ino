@@ -18,6 +18,7 @@
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 #include "logging.h"
 #include "plant.h"
+#include "jsmn.h"
 
 int wifi_status = WL_IDLE_STATUS;
 
@@ -44,14 +45,21 @@ const int maxPlants = DIGITAL_CHANNELS-2;
 
 Plant* plants[maxPlants] = {NULL};
 
-unsigned long api_lastConnectionTime = 0;            // last time you connected to the server, in milliseconds
-unsigned long api_lastEpochTime = 0;
+unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
+unsigned long api_lastEpochOffset = 0;
+unsigned long api_lastCall_millis = 0;
 //const unsigned long postingInterval = 10L * 1000L; // delay between updates, in milliseconds
+
+bool api_parse_result = false;
+unsigned long api_today_sunrise = 0;
+unsigned long api_today_sunset = 0;
+double current_temp = 0;
+double current_humidity = 0;
+int current_clouds = 0;
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
 
-bool test = false;
 volatile bool waterAvailable = true;
 
 const int pinWaterSensor = 1;
@@ -162,24 +170,86 @@ void loop()
   {
     logger.println("api_i");
   }
+  bool api_currentLineIsBlank = true;
   int pos = 0;
   while (api_client.available())
   {
     char c = api_client.read();
-    if(pos >= 20000)
-    {
-      break;
-    }
-    api_response[pos] = c;
-    ++pos;
     Serial.write(c);
+    if(api_parse_result) //this char is the first after the empty newline
+    {
+      if(pos >= 20000)
+      {
+        break;
+      }
+      api_response[pos] = c;
+      ++pos;
+    }
+
+    if (c == '\n' && api_currentLineIsBlank)
+    {
+      api_parse_result = true; //this line is still \n 
+    }
+    if (c == '\n')
+    {
+      // you're starting a new line
+      api_currentLineIsBlank = true;
+    }
+    else if (c != '\r')
+    {
+      // you've gotten a character on the current line
+      api_currentLineIsBlank = false;
+    }
+
+
+
   }
+
+  if(api_parse_result)
+  {
+    Serial.println();
+    //api has been called recently, parse newest weather data
+    //parse time offset:
+    int r;
+    jsmn_parser p;
+    jsmntok_t t[56]; // this is enough for global data section
+  
+    jsmn_init(&p);
+    r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+
+    //sync internal clock:
+    //calculate difference since last sync:
+    long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
+    api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+
+    logger.setOffset(api_lastEpochOffset);
+    logger.print("diff:");
+    logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
+
+    current_temp = atof(api_response+t[16].start);
+    current_humidity = atof(api_response+t[22].start);
+    current_clouds = atoi(api_response+t[28].start);
+
+    unsigned long sunrise = atol(api_response+t[12].start);
+    unsigned long sunset = atol(api_response+t[14].start);
+    if(api_today_sunrise != sunrise)
+    {
+      //roll over day here!
+      logger.println("nd");
+      api_today_sunrise = sunrise;
+      api_today_sunset = sunset;
+    }
+
+    api_parse_result = false;
+  }
+  
   
 
   if(api_lastConnectionTime  < (double)millis() - 50000.0)
   {
     logger.println("api_r");
     // send out request to weather API
+    api_lastCall_millis = millis();
     httpRequest();
   }
 
@@ -286,7 +356,18 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("");
     webserver_client.println("<table style=\"border:0px\">");
     webserver_client.println("<tr>");
-    webserver_client.println("<td>Date & Time</td><td>09.04.2020 17:36</td>");
+    webserver_client.print("<td>Last Weather Call</td><td>");
+    webserver_client.print(api_lastEpochOffset + (unsigned long)((double) api_lastCall_millis / 1000.0));
+    webserver_client.println("</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.print("<td>current Weather</td><td>");
+    webserver_client.print(current_temp);
+    webserver_client.print("°C, clouds ");
+    webserver_client.print(current_clouds);
+    webserver_client.print("%, humidity ");
+    webserver_client.print(current_humidity);
+    webserver_client.println("%</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
     webserver_client.println("<td>Weather today</td><td>25°C, clouds 56%, humidity 34%</td>");
