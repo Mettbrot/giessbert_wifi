@@ -16,3 +16,5 @@ loop
 
     at sundown: turn on lights until midnight ;)
 }
+
+https://github.com/rszimm/sprinklers_pi/wiki/Weather-adjustments
