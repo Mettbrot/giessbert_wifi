@@ -35,7 +35,14 @@ char apiserver[] = "api.openweathermap.org";
 //StaticJsonDocument<26000> doc;
 char* const api_response = static_cast<char*>(malloc(20000));
 
-Plant* plants[ANALOG_CHANNELS] = {NULL};
+//pump characteristics
+const double lps = 0.0326; //liter per second
+const double lps_large = 0.0517; //liter per second with only larger diameter
+
+#define DIGITAL_CHANNELS 8
+const int maxPlants = DIGITAL_CHANNELS-2;
+
+Plant* plants[maxPlants] = {NULL};
 
 unsigned long api_lastConnectionTime = 0;            // last time you connected to the server, in milliseconds
 unsigned long api_lastEpochTime = 0;
@@ -43,6 +50,13 @@ unsigned long api_lastEpochTime = 0;
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
+
+bool test = false;
+volatile bool waterAvailable = true;
+
+const int pinWaterSensor = 1;
+const int pinPump = 2;
+const int pinPlantOffset = 3;
 
 void setup()
 {
@@ -53,12 +67,27 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-//setup plants
-plants[1] = new Plant("Cherrytomate 1", 600, 1300);
-plants[2] = new Plant("Rispentomate 1", 400, 1700);
+  //setup plants
+  plants[1] = new Plant("Cherrytomate 1", 600, 1300);
+  plants[2] = new Plant("Rispentomate 1", 400, 1700);
 
-analogReadResolution(12);
-memset(api_response, 0, 20000);
+  pinMode(LED_BUILTIN, OUTPUT); 
+  pinMode(pinWaterSensor, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
+  pinMode(pinPump, OUTPUT);
+  digitalWrite(pinPump, HIGH);
+
+  for(int i = 0; i < maxPlants; ++i)
+  {
+    if(plants[i] == NULL)
+    {
+      continue;
+    }
+    pinMode(pinPlantOffset+i, OUTPUT);
+    digitalWrite(pinPlantOffset+i, HIGH);
+  }
+  
+  memset(api_response, 0, 20000);
 }
 
 void loop()
@@ -128,9 +157,7 @@ void loop()
 
   }
   
-  // if there's incoming data from the net connection.
-  // send it out the serial port.  This is for debugging
-  // purposes only:
+
   if(api_client.available())
   {
     logger.println("api_i");
@@ -149,7 +176,7 @@ void loop()
   }
   
 
-  if(api_lastConnectionTime  < (double)millis() - 20000.0)
+  if(api_lastConnectionTime  < (double)millis() - 50000.0)
   {
     logger.println("api_r");
     // send out request to weather API
@@ -157,6 +184,21 @@ void loop()
   }
 
 }
+
+void disableEnablePump()
+{
+  if(digitalRead(pinWaterSensor) == LOW)
+  {
+    waterAvailable = true;
+  }
+  else
+  {
+    waterAvailable = false;
+    //also stop pump right away!
+    digitalWrite(pinPump, HIGH);
+  }
+}
+
 
 
 // this method makes a HTTP connection to the server:
@@ -264,13 +306,16 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("<td>Lights </td><td><button type=\"submit\" name=\"lights\" value=\"on\">ON</button><button type=\"submit\" name=\"lights\" value=\"off\">OFF</button></td>");
     webserver_client.println("</tr>");
     webserver_client.println("</table>");
-    webserver_client.println(analogRead(A0));
     webserver_client.println("<br />");
+    if(!waterAvailable)
+    {
+      webserver_client.println("<h2 style=\"color: red\">Water is empty!</h2>");
+    }
     webserver_client.println("<table style=\"border:0px;text-align:center;\">");
     webserver_client.println("<tr style=\"font-weight:bold\">");
     webserver_client.println("<td>Port</td><td>Plant</td><td>Water today [ml]</td><td>Water total [l]</td><td>Action</td>");
     webserver_client.println("</tr>");
-    for(int i = 0; i < ANALOG_CHANNELS; ++i)
+    for(int i = 0; i < maxPlants; ++i)
     {
       if(plants[i] == NULL)
       {
