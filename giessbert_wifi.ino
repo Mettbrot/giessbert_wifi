@@ -122,137 +122,160 @@ void loop()
     webserver.begin();
   }
 
-  
-  // listen for incoming clients
-  WiFiClient webserver_client = webserver.available();
-  if (webserver_client)
+  //check if we need to water
+  if(api_lastEpochOffset)
   {
-    logger.println("wc_c");
-    // an http request ends with a blank line
-    bool currentLineIsBlank = true;
-    while (webserver_client.connected())
+    if(offsetMillis() > api_today_sunrise)
     {
-      if (webserver_client.available())
+      //start watering
+      //stop api calls, website is fine??
+      
+    }
+  }
+  
+
+
+  // everything after here is useless without wifi
+  if(wifi_status == WL_CONNECTED)
+  {
+    
+    // listen for incoming clients
+    WiFiClient webserver_client = webserver.available();
+    if (webserver_client)
+    {
+      logger.println("wc_c");
+      // an http request ends with a blank line
+      bool currentLineIsBlank = true;
+      while (webserver_client.connected())
       {
-        char c = webserver_client.read();
-        Serial.write(c);
-        // if you've gotten to the end of the line (received a newline
-        // character) and the line is blank, the http request has ended,
-        // so you can send a reply
-        if (c == '\n' && currentLineIsBlank)
+        if (webserver_client.available())
         {
-          printWebPage(webserver_client);
+          char c = webserver_client.read();
+          Serial.write(c);
+          // if you've gotten to the end of the line (received a newline
+          // character) and the line is blank, the http request has ended,
+          // so you can send a reply
+          if (c == '\n' && currentLineIsBlank)
+          {
+            printWebPage(webserver_client);
+            break;
+          }
+          if (c == '\n')
+          {
+            // you're starting a new line
+            currentLineIsBlank = true;
+          }
+          else if (c != '\r')
+          {
+            // you've gotten a character on the current line
+            currentLineIsBlank = false;
+          }
+        }
+      }
+      // give the web browser time to receive the data
+      delay(1);
+  
+      // close the connection:
+      webserver_client.stop();
+      logger.println("wc_d");
+  
+    }
+    
+  
+    if(api_client.available())
+    {
+      logger.println("api_i");
+    }
+    bool api_currentLineIsBlank = true;
+    int pos = 0;
+    while (api_client.available())
+    {
+      char c = api_client.read();
+      Serial.write(c);
+      if(api_parse_result) //this char is the first after the empty newline
+      {
+        if(pos >= 20000)
+        {
           break;
         }
-        if (c == '\n')
-        {
-          // you're starting a new line
-          currentLineIsBlank = true;
-        }
-        else if (c != '\r')
-        {
-          // you've gotten a character on the current line
-          currentLineIsBlank = false;
-        }
+        api_response[pos] = c;
+        ++pos;
       }
-    }
-    // give the web browser time to receive the data
-    delay(1);
-
-    // close the connection:
-    webserver_client.stop();
-    logger.println("wc_d");
-
-  }
   
-
-  if(api_client.available())
-  {
-    logger.println("api_i");
-  }
-  bool api_currentLineIsBlank = true;
-  int pos = 0;
-  while (api_client.available())
-  {
-    char c = api_client.read();
-    Serial.write(c);
-    if(api_parse_result) //this char is the first after the empty newline
-    {
-      if(pos >= 20000)
+      if (c == '\n' && api_currentLineIsBlank)
       {
-        break;
+        api_parse_result = true; //this line is still \n 
       }
-      api_response[pos] = c;
-      ++pos;
-    }
-
-    if (c == '\n' && api_currentLineIsBlank)
-    {
-      api_parse_result = true; //this line is still \n 
-    }
-    if (c == '\n')
-    {
-      // you're starting a new line
-      api_currentLineIsBlank = true;
-    }
-    else if (c != '\r')
-    {
-      // you've gotten a character on the current line
-      api_currentLineIsBlank = false;
-    }
-
-
-
-  }
-
-  if(api_parse_result)
-  {
-    Serial.println();
-    //api has been called recently, parse newest weather data
-    //parse time offset:
-    int r;
-    jsmn_parser p;
-    jsmntok_t t[56]; // this is enough for global data section
-  
-    jsmn_init(&p);
-    r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
-
-    //sync internal clock:
-    //calculate difference since last sync:
-    long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
-    api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
-
-    logger.setOffset(api_lastEpochOffset);
-    logger.print("diff:");
-    logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
-
-    current_temp = atof(api_response+t[16].start);
-    current_humidity = atof(api_response+t[22].start);
-    current_clouds = atoi(api_response+t[28].start);
-
-    unsigned long sunrise = atol(api_response+t[12].start);
-    unsigned long sunset = atol(api_response+t[14].start);
-    if(api_today_sunrise != sunrise)
-    {
-      //roll over day here!
-      logger.println("nd");
-      api_today_sunrise = sunrise;
-      api_today_sunset = sunset;
-    }
-
-    api_parse_result = false;
-  }
+      if (c == '\n')
+      {
+        // you're starting a new line
+        api_currentLineIsBlank = true;
+      }
+      else if (c != '\r')
+      {
+        // you've gotten a character on the current line
+        api_currentLineIsBlank = false;
+      }
   
   
+  
+    }
+  
+    if(api_parse_result)
+    {
+      Serial.println();
+      //api has been called recently, parse newest weather data
+      //parse time offset:
+      int r;
+      jsmn_parser p;
+      jsmntok_t t[56]; // this is enough for global data section
+    
+      jsmn_init(&p);
+      r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+  
+      //sync internal clock:
+      //calculate difference since last sync:
+      long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
+      api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+  
+      logger.setOffset(api_lastEpochOffset);
+      logger.print("diff:");
+      logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
+  
+      current_temp = atof(api_response+t[16].start);
+      current_humidity = atof(api_response+t[22].start);
+      current_clouds = atoi(api_response+t[28].start);
+  
+      unsigned long sunrise = atol(api_response+t[12].start);
+      unsigned long sunset = atol(api_response+t[14].start);
+      if(api_today_sunrise != sunrise)
+      {
+        //roll over day here!
+        logger.println("nd");
+        api_today_sunrise = sunrise;
+        api_today_sunset = sunset;
+      }
+  
+      api_parse_result = false;
+    }
+  
+  
+  
+  
+    
+    
+  
+  //if we have nothing yet, try every 1000?? sec. if we have every hour? if we have something, but sunrise is more than a day in the future : we rolled over millis() - refetch
+    if(api_lastConnectionTime  < (double)millis() - 50000.0)
+    {
+      logger.println("api_r");
+      // send out request to weather API
+      api_lastCall_millis = millis();
+      httpRequest();
+    }
 
-  if(api_lastConnectionTime  < (double)millis() - 50000.0)
-  {
-    logger.println("api_r");
-    // send out request to weather API
-    api_lastCall_millis = millis();
-    httpRequest();
   }
-
+    
 }
 
 void disableEnablePump()
@@ -269,7 +292,15 @@ void disableEnablePump()
   }
 }
 
+unsigned long offsetMillis(unsigned long mil)
+{
+  return api_lastEpochOffset + (unsigned long)((double) mil / 1000.0);
+}
 
+unsigned long offsetMillis()
+{
+  return offsetMillis(millis());
+}
 
 // this method makes a HTTP connection to the server:
 void httpRequest()
@@ -357,7 +388,7 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("<table style=\"border:0px\">");
     webserver_client.println("<tr>");
     webserver_client.print("<td>Last Weather Call</td><td>");
-    webserver_client.print(api_lastEpochOffset + (unsigned long)((double) api_lastCall_millis / 1000.0));
+    webserver_client.print(offsetMillis(api_lastCall_millis));
     webserver_client.println("</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
