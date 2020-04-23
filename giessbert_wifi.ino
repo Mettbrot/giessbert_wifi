@@ -22,7 +22,8 @@
 
 int wifi_status = WL_IDLE_STATUS;
 
-#define ANALOG_CHANNELS 8
+#define DIGITAL_CHANNELS 10
+#define SUNSET_LIGHTS true
 
 // Initialize the Wifi client library
 WiFiClient api_client;
@@ -40,10 +41,21 @@ char* const api_response = static_cast<char*>(malloc(20000));
 const double lps = 0.0326; //liter per second
 const double lps_large = 0.0517; //liter per second with only larger diameter
 
-#define DIGITAL_CHANNELS 8
 const int maxPlants = DIGITAL_CHANNELS-2;
 
 Plant* plants[maxPlants] = {NULL};
+
+//TODO maybe mapping table channels -> pins
+const int pinWaterSensor = 1;
+const int pinPump = 2;
+const int pinLights = 3;
+const int pinPlantOffset = 4;
+
+volatile bool waterAvailable = true;
+
+int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
+int currently_watering_plant_plus1 = 0;
+unsigned long current_watering_start_millis = 0;
 
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
 unsigned long api_lastEpochOffset = 0;
@@ -53,6 +65,11 @@ unsigned long api_lastCall_millis = 0;
 bool api_parse_result = false;
 unsigned long api_today_sunrise = 0;
 unsigned long api_today_sunset = 0;
+
+double today_temp = 0;
+double today_humidity = 0;
+int today_clouds = 0;
+
 double current_temp = 0;
 double current_humidity = 0;
 int current_clouds = 0;
@@ -60,11 +77,6 @@ int current_clouds = 0;
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
 
-volatile bool waterAvailable = true;
-
-const int pinWaterSensor = 1;
-const int pinPump = 2;
-const int pinPlantOffset = 3;
 
 void setup()
 {
@@ -76,14 +88,16 @@ void setup()
   }
 
   //setup plants
-  plants[1] = new Plant("Cherrytomate 1", 600, 1300);
-  plants[2] = new Plant("Rispentomate 1", 400, 1700);
+  plants[1] = new Plant("Cherrytomate 1", 600, 1300, 900);
+  plants[2] = new Plant("Rispentomate 1", 400, 1700, 900);
 
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
   pinMode(pinPump, OUTPUT);
   digitalWrite(pinPump, HIGH);
+  pinMode(pinLights, OUTPUT);
+  digitalWrite(pinLights, HIGH);
 
   for(int i = 0; i < maxPlants; ++i)
   {
@@ -125,14 +139,69 @@ void loop()
   //check if we need to water
   if(api_lastEpochOffset)
   {
-    if(offsetMillis() > api_today_sunrise)
+    if(state_watering_today == 0 && offsetMillis() > api_today_sunrise)
     {
       //start watering
-      //stop api calls, website is fine??
-      
+      //stop api calls, website is fine?? via currently_watering_plant_plus1
+      if(currently_watering_plant_plus1)
+      {
+        double watered = (millis() - current_watering_start_millis) * lps;
+        if(watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise))
+        {
+          //next plant
+          //stop watering of this plant
+          digitalWrite(pinPlantOffset+currently_watering_plant_plus1-1, HIGH);
+          for(int i = currently_watering_plant_plus1; i < maxPlants; ++i)
+          {
+            if(plants[i] == NULL)
+            {
+              continue;
+            }
+            //start watering of next plant:
+            current_watering_start_millis = millis();
+            currently_watering_plant_plus1 = i+1;
+            digitalWrite(pinPlantOffset+i, LOW);
+          }
+        }
+      }
+      else
+      { //TODO refactor
+        for(int i = currently_watering_plant_plus1; i < maxPlants; ++i)
+        {
+          if(plants[i] == NULL)
+          {
+            continue;
+          }
+          //start watering of next plant:
+          current_watering_start_millis = millis();
+          currently_watering_plant_plus1 = i+1;
+          digitalWrite(pinPlantOffset+i, LOW);
+        }
+      }
+
+      //TODO wenn watering abgeschlossen
+      state_watering_today = 1;
+
+
+/*
+        if(water is less then amount)
+        pin low
+        else
+        pin high, find next plant set global, if no next plant set state to "watered"
+        */
+    }
+    else if(state_watering_today == 1 && offsetMillis() > api_today_sunset)
+    {
+      //same as before
     }
   }
-  
+
+
+  //if its sunset turn on the lights:
+  if(SUNSET_LIGHTS && now() > api_today_sunset)
+  {
+    digitalWrite(pinLights, LOW);
+  }
 
 
   // everything after here is useless without wifi
@@ -220,6 +289,8 @@ void loop()
   
   
     }
+
+    //TODO make sure api is calles at midnight, to roll over day correctly
   
     if(api_parse_result)
     {
@@ -254,6 +325,18 @@ void loop()
         logger.println("nd");
         api_today_sunrise = sunrise;
         api_today_sunset = sunset;
+        
+        for(int i = 0; i < maxPlants; ++i)
+        {
+          if(plants[i] == NULL)
+          {
+            continue;
+          }
+          plants[i]->resetDailyWater();
+        }
+        state_watering_today = 0;
+        //turn off lights
+        digitalWrite(pinLights, HIGH);
       }
   
       api_parse_result = false;
@@ -266,7 +349,7 @@ void loop()
     
   
   //if we have nothing yet, try every 1000?? sec. if we have every hour? if we have something, but sunrise is more than a day in the future : we rolled over millis() - refetch
-    if(api_lastConnectionTime  < (double)millis() - 50000.0)
+    if(!currently_watering_plant_plus1 && api_lastConnectionTime  < (double)millis() - 50000.0)
     {
       logger.println("api_r");
       // send out request to weather API
@@ -300,6 +383,11 @@ unsigned long offsetMillis(unsigned long mil)
 unsigned long offsetMillis()
 {
   return offsetMillis(millis());
+}
+
+unsigned long now()
+{
+  return offsetMillis();
 }
 
 // this method makes a HTTP connection to the server:
