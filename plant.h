@@ -27,25 +27,4 @@ class Plant
     
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#endif
+#endif //PLANT_H

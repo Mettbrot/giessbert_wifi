@@ -18,6 +18,8 @@
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 #include "logging.h"
 #include "plant.h"
+#include "timecalc.h"
+
 #include "jsmn.h"
 
 int wifi_status = WL_IDLE_STATUS;
