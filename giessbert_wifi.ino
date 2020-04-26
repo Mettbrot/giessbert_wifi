@@ -136,66 +136,70 @@ void loop()
     webserver.begin();
   }
 
-  //check if we need to water
-  if(api_lastEpochOffset)
+  //check if we can water
+  if(waterAvailable && api_lastEpochOffset)
   {
+    //check if we need to water
     if(state_watering_today == 0 && offsetMillis() > api_today_sunrise)
     {
       //start watering
       //stop api calls, website is fine?? via currently_watering_plant_plus1
-      if(currently_watering_plant_plus1)
-      {
-        double watered = (millis() - current_watering_start_millis) * lps;
-        if(watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise))
-        {
-          //next plant
-          //stop watering of this plant
-          digitalWrite(pinPlantOffset+currently_watering_plant_plus1-1, HIGH);
-          for(int i = currently_watering_plant_plus1; i < maxPlants; ++i)
-          {
-            if(plants[i] == NULL)
-            {
-              continue;
-            }
-            //start watering of next plant:
-            current_watering_start_millis = millis();
-            currently_watering_plant_plus1 = i+1;
-            digitalWrite(pinPlantOffset+i, LOW);
-          }
-        }
-      }
-      else
-      { //TODO refactor
-        for(int i = currently_watering_plant_plus1; i < maxPlants; ++i)
-        {
-          if(plants[i] == NULL)
-          {
-            continue;
-          }
-          //start watering of next plant:
-          current_watering_start_millis = millis();
-          currently_watering_plant_plus1 = i+1;
-          digitalWrite(pinPlantOffset+i, LOW);
-        }
-      }
-
-      //TODO wenn watering abgeschlossen
-      state_watering_today = 1;
-
-
-/*
-        if(water is less then amount)
-        pin low
-        else
-        pin high, find next plant set global, if no next plant set state to "watered"
-        */
+      selectCurrentPlantToWater();
     }
     else if(state_watering_today == 1 && offsetMillis() > api_today_sunset)
     {
       //same as before
+      selectCurrentPlantToWater();
+    }
+    //TODO even more states???
+  }
+
+  //check if we are done watering for now
+  if(currently_watering_plant_plus1 == maxPlants+1)
+  {
+    //we watered all plants
+    currently_watering_plant_plus1 = 0;
+    ++state_watering_today;
+    //disable pump
+    digitalWrite(pinPump, HIGH);
+    //disable all valves
+    for(int i = 0; i < maxPlants; ++i)
+    {
+      if(plants[i] == NULL)
+      {
+        continue;
+      }
+      digitalWrite(pinPlantOffset+i, HIGH);
     }
   }
 
+  //watering variables were set, turn on valves and pump
+  if(waterAvailable && currently_watering_plant_plus1)
+  {
+    //turn on pump and one valve
+    digitalWrite(pinPump, LOW);
+    digitalWrite(pinPlantOffset+currently_watering_plant_plus1-1, LOW);
+    
+    for(int i = 0; i < maxPlants; ++i)
+    {
+      if(plants[i] == NULL)
+      {
+        continue;
+      }
+      if(i == currently_watering_plant_plus1-1)
+      {
+        continue;
+      }
+      //disable all other valves
+      digitalWrite(pinPlantOffset+i, HIGH);
+    }
+  }
+  else
+  {
+    //for safety on every loop
+    digitalWrite(pinPump, HIGH);
+  }
+          
 
   //if its sunset turn on the lights:
   if(SUNSET_LIGHTS && now() > api_today_sunset)
@@ -372,6 +376,31 @@ void disableEnablePump()
     waterAvailable = false;
     //also stop pump right away!
     digitalWrite(pinPump, HIGH);
+  }
+}
+
+void selectCurrentPlantToWater()
+{
+  double watered = (millis() - current_watering_start_millis) * lps; //in ml
+  //if this is our first plant, OR if the current plant's watering is done, switch to the next one
+  if(!currently_watering_plant_plus1 || watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise))
+  {
+    if(currently_watering_plant_plus1)
+    {
+      //save water amount to plant:
+      plants[currently_watering_plant_plus1-1]->addWater(watered);
+    }
+    //next plant
+    for(int i = currently_watering_plant_plus1; i <= maxPlants; ++i) //allow to go to maxPlants to detect state after last plant
+    {
+      if(plants[i] == NULL)
+      {
+        continue;
+      }            
+      //start watering of next plant:
+      current_watering_start_millis = millis();
+      currently_watering_plant_plus1 = i+1;
+    }
   }
 }
 
