@@ -1,6 +1,8 @@
 #include "Arduino.h"
 #include "logging.h"
 
+#include "timecalc.h"
+
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -44,9 +46,17 @@ size_t Logging::print(const char* str)
     size_t ret = 0;
     if(_print_date)
     {
-        char date[12] = {0};
-        std::sprintf(date, "%u: ", _time_offset+(millis()/1000));
+        char date[25] = {0};
+        if(_time_offset)
+        {
+            formattedDate(date, _time_offset+(millis()/1000.0));
+        }
+        else
+        {
+            std::sprintf(date, "%u", _time_offset+(millis()/1000));
+        }
         ret += write(date);
+        ret += write(": ");
         _print_date = false;
     }
     ret += write(str);

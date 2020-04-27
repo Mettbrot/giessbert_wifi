@@ -24,13 +24,13 @@
 
 int wifi_status = WL_IDLE_STATUS;
 
-#define DIGITAL_CHANNELS 10
+#define DIGITAL_CHANNELS 8
 #define SUNSET_LIGHTS true
 
 // Initialize the Wifi client library
 WiFiClient api_client;
 
-Logging logger(&Serial, 3000);
+Logging logger(&Serial, 0);
 
 
 // server address:
@@ -47,13 +47,14 @@ const int maxPlants = DIGITAL_CHANNELS-2;
 
 Plant* plants[maxPlants] = {NULL};
 
-//TODO maybe mapping table channels -> pins
-const int pinWaterSensor = 1;
-const int pinPump = 2;
-const int pinLights = 3;
-const int pinPlantOffset = 4;
+//mapping table
+int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
+const int pinWaterSensor = A1;
+const int idxPump = 1;
+const int idxLights = 2;
+const int idxPlantOffset = 3;
 
-volatile bool waterAvailable = true;
+volatile bool waterAvailable = false;
 
 int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
 int currently_watering_plant_plus1 = 0;
@@ -62,6 +63,7 @@ unsigned long current_watering_start_millis = 0;
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
 unsigned long api_lastEpochOffset = 0;
 unsigned long api_lastCall_millis = 0;
+unsigned long secs_today = 0;
 //const unsigned long postingInterval = 10L * 1000L; // delay between updates, in milliseconds
 
 bool api_parse_result = false;
@@ -96,10 +98,12 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
-  pinMode(pinPump, OUTPUT);
-  digitalWrite(pinPump, HIGH);
-  pinMode(pinLights, OUTPUT);
-  digitalWrite(pinLights, HIGH);
+  pinMode(pins[idxPump], OUTPUT);
+  digitalWrite(pins[idxPump], HIGH);
+  //call once to setup variables correctly
+  disableEnablePump();
+  pinMode(pins[idxLights], OUTPUT);
+  digitalWrite(pins[idxLights], HIGH);
 
   for(int i = 0; i < maxPlants; ++i)
   {
@@ -107,8 +111,8 @@ void setup()
     {
       continue;
     }
-    pinMode(pinPlantOffset+i, OUTPUT);
-    digitalWrite(pinPlantOffset+i, HIGH);
+    pinMode(pins[idxPlantOffset+i], OUTPUT);
+    digitalWrite(pins[idxPlantOffset+i], HIGH);
   }
   
   memset(api_response, 0, 20000);
@@ -163,7 +167,7 @@ void loop()
     currently_watering_plant_plus1 = 0;
     ++state_watering_today;
     //disable pump
-    digitalWrite(pinPump, HIGH);
+    digitalWrite(pins[idxPump], HIGH);
     //disable all valves
     for(int i = 0; i < maxPlants; ++i)
     {
@@ -171,7 +175,7 @@ void loop()
       {
         continue;
       }
-      digitalWrite(pinPlantOffset+i, HIGH);
+      digitalWrite(pins[idxPlantOffset+i], HIGH);
     }
   }
 
@@ -179,8 +183,8 @@ void loop()
   if(waterAvailable && currently_watering_plant_plus1)
   {
     //turn on pump and one valve
-    digitalWrite(pinPump, LOW);
-    digitalWrite(pinPlantOffset+currently_watering_plant_plus1-1, LOW);
+    digitalWrite(pins[idxPump], LOW);
+    digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], LOW);
     
     for(int i = 0; i < maxPlants; ++i)
     {
@@ -193,22 +197,42 @@ void loop()
         continue;
       }
       //disable all other valves
-      digitalWrite(pinPlantOffset+i, HIGH);
+      digitalWrite(pins[idxPlantOffset+i], HIGH);
     }
   }
   else
   {
     //for safety on every loop
-    digitalWrite(pinPump, HIGH);
+    digitalWrite(pins[idxPump], HIGH);
   }
           
 
   //if its sunset turn on the lights:
   if(SUNSET_LIGHTS && now() > api_today_sunset)
   {
-    digitalWrite(pinLights, LOW);
+    digitalWrite(pins[idxLights], LOW);
   }
-
+  
+  
+  if(elapsedSecsToday(now()) < secs_today)
+  {
+    //roll over day here!
+    logger.println("nd");
+    
+    for(int i = 0; i < maxPlants; ++i)
+    {
+      if(plants[i] == NULL)
+      {
+        continue;
+      }
+      plants[i]->resetDailyWater();
+    }
+    state_watering_today = 0;
+    //turn off lights
+    digitalWrite(pins[idxLights], HIGH);
+  }
+  //save secs today:
+  secs_today = elapsedSecsToday(now());
 
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
@@ -291,12 +315,7 @@ void loop()
         // you've gotten a character on the current line
         api_currentLineIsBlank = false;
       }
-  
-  
-  
     }
-
-    //TODO make sure api is calles at midnight, to roll over day correctly
   
     if(api_parse_result)
     {
@@ -323,27 +342,8 @@ void loop()
       current_humidity = atof(api_response+t[22].start);
       current_clouds = atoi(api_response+t[28].start);
   
-      unsigned long sunrise = atol(api_response+t[12].start);
-      unsigned long sunset = atol(api_response+t[14].start);
-      if(api_today_sunrise != sunrise)
-      {
-        //roll over day here!
-        logger.println("nd");
-        api_today_sunrise = sunrise;
-        api_today_sunset = sunset;
-        
-        for(int i = 0; i < maxPlants; ++i)
-        {
-          if(plants[i] == NULL)
-          {
-            continue;
-          }
-          plants[i]->resetDailyWater();
-        }
-        state_watering_today = 0;
-        //turn off lights
-        digitalWrite(pinLights, HIGH);
-      }
+      api_today_sunrise = atol(api_response+t[12].start);
+      api_today_sunset = atol(api_response+t[14].start);
   
       api_parse_result = false;
     }
@@ -354,8 +354,8 @@ void loop()
     
     
   
-  //if we have nothing yet, try every 1000?? sec. if we have every hour? if we have something, but sunrise is more than a day in the future : we rolled over millis() - refetch
-    if(!currently_watering_plant_plus1 && api_lastConnectionTime  < (double)millis() - 50000.0)
+  //if we have nothing yet, try every 1000?? sec. if we have every hour? if we have something, but sunrise is more than a day in the future : we rolled over millis() - refetch TODO
+    if(!currently_watering_plant_plus1 && (api_lastConnectionTime  < (double)millis() - 50000.0 ))
     {
       logger.println("api_r");
       // send out request to weather API
@@ -377,7 +377,7 @@ void disableEnablePump()
   {
     waterAvailable = false;
     //also stop pump right away!
-    digitalWrite(pinPump, HIGH);
+    digitalWrite(pins[idxPump], HIGH);
   }
 }
 
@@ -567,7 +567,7 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.println("</tr>");
     }
     webserver_client.println("</table>");
-    webserver_client.println("<textarea>");
+    webserver_client.println("<textarea rows=\"20\" cols=\"40\">");
     webserver_client.println(logger.getLog());
     webserver_client.println("</textarea>");
     webserver_client.println("<textarea>");
