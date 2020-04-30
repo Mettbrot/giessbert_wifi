@@ -58,6 +58,7 @@ const int idxPlantOffset = 2;
 volatile bool waterAvailable = false;
 
 bool sunset_reached_today = true; //disable lights until we have the first API call
+bool sunrise_reached_today = true;
 
 int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
 int currently_watering_plant_plus1 = 0;
@@ -99,7 +100,8 @@ void setup()
   //setup plants statically for now TODO
   got_plant_characteristics = true;
   plants[1] = new Plant("Cherrytomate 1", 600, 1300, 1500);
-  plants[2] = new Plant("Rispentomate 1", 400, 1700, 1500);
+  plants[3] = new Plant("Rispentomate 1", 400, 1700, 1500);
+  plants[4] = new Plant("Kumquats", 1000, 2600, 2500);
 
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
@@ -172,6 +174,8 @@ void loop()
     //we watered all plants
     currently_watering_plant_plus1 = 0;
     ++state_watering_today;
+    logger.print("w_d");
+    logger.println(state_watering_today);
     //disable pump
     digitalWrite(pins[idxPump], HIGH);
     //disable all valves
@@ -429,12 +433,28 @@ void disableEnablePump()
   if(digitalRead(pinWaterSensor) == LOW)
   {
     waterAvailable = true;
+    //were we watering?
+    if(currently_watering_plant_plus1)
+    {
+      //reset millis of current watering, and continue
+      current_watering_start_millis = millis();
+    }
   }
   else
   {
     waterAvailable = false;
     //also stop pump right away!
     digitalWrite(pins[idxPump], HIGH);
+    //were we watering?
+    if(currently_watering_plant_plus1)
+    {
+      //also stop valve of this plant:
+      digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], HIGH);
+      //and save already watered amount:
+      
+      double watered = (millis() - current_watering_start_millis) * lps; //in ml
+      plants[currently_watering_plant_plus1-1]->addWater(watered);
+    }
   }
 }
 
@@ -459,6 +479,7 @@ void selectCurrentPlantToWater()
       //start watering of next plant:
       current_watering_start_millis = millis();
       currently_watering_plant_plus1 = i+1;
+      break; //break if we found a plant
     }
   }
 }
