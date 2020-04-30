@@ -62,6 +62,16 @@ void breakTime(unsigned long timeInput, tmElements_t &tm){
 int formattedDate(char* buf, unsigned long ts, int timezone, bool dst)
 {
   //add timezone
+  ts = correctTimezoneDST(ts, timezone, dst);
+  tmElements_t tm;
+  breakTime(ts, tm);
+
+  return std::sprintf(buf, "%02u.%02u.%04u %02u:%02u:%02u", tm.Day, tm.Month, 1970+tm.Year, tm.Hour, tm.Minute, tm.Second);
+}
+
+unsigned long correctTimezoneDST(unsigned long ts, int timezone, bool dst)
+{
+  //add timezone
   ts = ts + 3600*timezone;
   tmElements_t tm;
   breakTime(ts, tm);
@@ -72,8 +82,7 @@ int formattedDate(char* buf, unsigned long ts, int timezone, bool dst)
     if(tm.Month > 3 && tm.Month < 10 || tm.Month == 3 && tm.Day > 25 || tm.Month == 10 && tm.Day < 25)
     {
       ts += 3600;
-      breakTime(ts, tm);
     }
   }
-  return std::sprintf(buf, "%02u.%02u.%04u %02u:%02u:%02u", tm.Day, tm.Month, 1970+tm.Year, tm.Hour, tm.Minute, tm.Second);
+  return ts;
 }

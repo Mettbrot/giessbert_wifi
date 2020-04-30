@@ -234,12 +234,12 @@ void loop()
   }
   
   //15 minutes before the day is over (on our timing) we shorten the api calling interval to get an accurate reading on the time
-  if(elapsedSecsToday(now()+15*60) < secs_today_in15mins) //this is true if its midnight in 15 minutes
+  if(elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true)) < secs_today_in15mins) //this is true if its midnight in 15 minutes
   {
     api_interval = 60*1000; // every minute
   }
   //save secs today in 15 minutes:
-  secs_today_in15mins = elapsedSecsToday(now()+15*60);
+  secs_today_in15mins = elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true));
 
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
