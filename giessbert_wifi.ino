@@ -67,10 +67,11 @@ unsigned long current_watering_start_millis = 0;
 bool got_plant_characteristics = false;
 
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
-unsigned long api_lastEpochOffset = 0;
+unsigned long api_epochOffset = 0;
 unsigned long api_lastCall_millis = 0;
 unsigned long secs_today_in15mins = 0;
 unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
+unsigned long api_poweron_days = 0;
 
 bool api_parse_result = false;
 unsigned long api_today_sunrise = 0;
@@ -151,13 +152,12 @@ void loop()
   }
 
   //check if we can water
-  if(waterAvailable && api_lastEpochOffset)
+  if(waterAvailable && api_epochOffset && api_poweron_days)
   {
     //check if we need to water
     if(state_watering_today == 0 && offsetMillis() > api_today_sunrise)
     {
       //start watering
-      //stop api calls, website is fine?? via currently_watering_plant_plus1
       selectCurrentPlantToWater();
     }
     else if(state_watering_today == 1 && offsetMillis() > api_today_sunset)
@@ -377,13 +377,23 @@ void loop()
           
           //sync internal clock:
           //calculate difference since last sync:
-          long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
-          api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+          long unsigned api_lastEpochOffset = api_epochOffset;
+          api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
           //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates?
           //we dont care though, if we are 15 minutes behind...
-          logger.setOffset(api_lastEpochOffset);
+          logger.setOffset(api_epochOffset);
           logger.print("diff:");
-          logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
+          logger.println((double)api_epochOffset - (double)api_lastEpochOffset);
+
+          if(!api_lastEpochOffset)
+          {
+            //if api_offset was zero before this newday, this was poweron. Set to 0
+            api_poweron_days = 0;
+          }
+          else
+          {
+            ++api_poweron_days;
+          }
   
           //we have our newday, set interval back to normal:
           api_interval = 3600 * 1000;
@@ -401,6 +411,7 @@ void loop()
           //turn off lights
           digitalWrite(pins[idxLights], HIGH);
           sunset_reached_today = false;
+          sunrise_reached_today = false;
         }
         api_today_sunrise = sunrise;
         api_today_sunset = atol(api_response+t[14].start);
@@ -416,7 +427,7 @@ void loop()
     
     
   
-    if(got_plant_characteristics && !currently_watering_plant_plus1 && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
+    if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
     {
       logger.println("api_r");
       // send out request to weather API
@@ -486,7 +497,7 @@ void selectCurrentPlantToWater()
 
 unsigned long offsetMillis(unsigned long mil)
 {
-  return api_lastEpochOffset + (unsigned long)((double) mil / 1000.0);
+  return api_epochOffset + (unsigned long)((double) mil / 1000.0);
 }
 
 unsigned long offsetMillis()
