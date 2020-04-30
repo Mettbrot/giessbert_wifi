@@ -9,6 +9,7 @@
 * @details
 */
 
+
 #include <SPI.h>
 #include <WiFiNINA.h>
 #include <ArduinoJson.h>
@@ -50,21 +51,25 @@ Plant* plants[maxPlants] = {NULL};
 //mapping table
 int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
 const int pinWaterSensor = A1;
+const int idxLights = 0;
 const int idxPump = 1;
-const int idxLights = 2;
-const int idxPlantOffset = 3;
+const int idxPlantOffset = 2;
 
 volatile bool waterAvailable = false;
+
+bool sunset_reached_today = true; //disable lights until we have the first API call
 
 int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
 int currently_watering_plant_plus1 = 0;
 unsigned long current_watering_start_millis = 0;
 
+bool got_plant_characteristics = false;
+
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
 unsigned long api_lastEpochOffset = 0;
 unsigned long api_lastCall_millis = 0;
-unsigned long secs_today = 0;
-//const unsigned long postingInterval = 10L * 1000L; // delay between updates, in milliseconds
+unsigned long secs_today_in15mins = 0;
+unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
 
 bool api_parse_result = false;
 unsigned long api_today_sunrise = 0;
@@ -91,9 +96,10 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  //setup plants
-  plants[1] = new Plant("Cherrytomate 1", 600, 1300, 900);
-  plants[2] = new Plant("Rispentomate 1", 400, 1700, 900);
+  //setup plants statically for now TODO
+  got_plant_characteristics = true;
+  plants[1] = new Plant("Cherrytomate 1", 600, 1300, 1500);
+  plants[2] = new Plant("Rispentomate 1", 400, 1700, 1500);
 
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
@@ -185,7 +191,7 @@ void loop()
     //turn on pump and one valve
     digitalWrite(pins[idxPump], LOW);
     digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], LOW);
-    
+
     for(int i = 0; i < maxPlants; ++i)
     {
       if(plants[i] == NULL)
@@ -208,31 +214,20 @@ void loop()
           
 
   //if its sunset turn on the lights:
-  if(SUNSET_LIGHTS && now() > api_today_sunset)
+  if(SUNSET_LIGHTS && !sunset_reached_today && now() > api_today_sunset)
   {
     digitalWrite(pins[idxLights], LOW);
+    //only do this once, we may want to turn them off manually
+    sunset_reached_today = true;
   }
   
-  
-  if(elapsedSecsToday(now()) < secs_today)
+  //15 minutes before the day is over (on our timing) we shorten the api calling interval to get an accurate reading on the time
+  if(elapsedSecsToday(now()+15*60) < secs_today_in15mins) //this is true if its midnight in 15 minutes
   {
-    //roll over day here!
-    logger.println("nd");
-    
-    for(int i = 0; i < maxPlants; ++i)
-    {
-      if(plants[i] == NULL)
-      {
-        continue;
-      }
-      plants[i]->resetDailyWater();
-    }
-    state_watering_today = 0;
-    //turn off lights
-    digitalWrite(pins[idxLights], HIGH);
+    api_interval = 60*1000; // every minute
   }
-  //save secs today:
-  secs_today = elapsedSecsToday(now());
+  //save secs today in 15 minutes:
+  secs_today_in15mins = elapsedSecsToday(now()+15*60);
 
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
@@ -244,31 +239,60 @@ void loop()
     {
       logger.println("wc_c");
       // an http request ends with a blank line
-      bool currentLineIsBlank = true;
+      String currentLine = "";
       while (webserver_client.connected())
       {
         if (webserver_client.available())
         {
           char c = webserver_client.read();
           Serial.write(c);
-          // if you've gotten to the end of the line (received a newline
-          // character) and the line is blank, the http request has ended,
-          // so you can send a reply
-          if (c == '\n' && currentLineIsBlank)
-          {
-            printWebPage(webserver_client);
-            break;
-          }
           if (c == '\n')
           {
-            // you're starting a new line
-            currentLineIsBlank = true;
+            // if the current line is blank, you got two newline characters in a row.
+            // that's the end of the client HTTP request, so send a response:
+            if (currentLine.length() == 0)
+            {
+              printWebPage(webserver_client);
+              break;
+            }
+            else
+            {
+              // you're starting a new line
+              currentLine = "";
+            }
           }
           else if (c != '\r')
           {
             // you've gotten a character on the current line
-            currentLineIsBlank = false;
+            currentLine += c;
+            
+            //check requests from the web here:
+            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
+            {
+              //we can analyze this:
+              int lights = currentLine.indexOf("lights=");
+              int water200 = currentLine.indexOf("water200=");
+              if(lights != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(lights+7));
+                if(str == "on")
+                {
+                  logger.println("m_lon");
+                  digitalWrite(pins[idxLights], LOW);
+                }
+                else if(str == "off")
+                {
+                  logger.println("m_loff");
+                  digitalWrite(pins[idxLights], HIGH);
+                }
+              }
+              if(water200 != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(water200+9));
+              }
+            }
           }
+ 
         }
       }
       // give the web browser time to receive the data
@@ -319,33 +343,67 @@ void loop()
   
     if(api_parse_result)
     {
-      Serial.println();
-      //api has been called recently, parse newest weather data
-      //parse time offset:
-      int r;
-      jsmn_parser p;
-      jsmntok_t t[56]; // this is enough for global data section
+      if(!got_plant_characteristics)
+      {
+        //this is the characteristics call, parse differently:
+      }
+      else
+      {
+        Serial.println();
+        //api has been called recently, parse newest weather data
+        //parse time offset:
+        int r;
+        jsmn_parser p;
+        jsmntok_t t[56]; // this is enough for global data section
+      
+        jsmn_init(&p);
+        r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
     
-      jsmn_init(&p);
-      r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+    
+        current_temp = atof(api_response+t[16].start);
+        current_humidity = atof(api_response+t[22].start);
+        current_clouds = atoi(api_response+t[28].start);
   
-      //sync internal clock:
-      //calculate difference since last sync:
-      long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
-      api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+        unsigned long sunrise = atol(api_response+t[12].start);
+        //roll over day on midnight and powerup:
+        if(api_today_sunrise != sunrise)
+        {
+          //roll over day here!
+          logger.println("nd");
+          
+          //sync internal clock:
+          //calculate difference since last sync:
+          long unsigned api_lastlastEpochOffset = api_lastEpochOffset;
+          api_lastEpochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+          //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates?
+          //we dont care though, if we are 15 minutes behind...
+          logger.setOffset(api_lastEpochOffset);
+          logger.print("diff:");
+          logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
   
-      logger.setOffset(api_lastEpochOffset);
-      logger.print("diff:");
-      logger.println((double)api_lastEpochOffset - (double)api_lastlastEpochOffset);
+          //we have our newday, set interval back to normal:
+          api_interval = 3600 * 1000;
   
-      current_temp = atof(api_response+t[16].start);
-      current_humidity = atof(api_response+t[22].start);
-      current_clouds = atoi(api_response+t[28].start);
-  
-      api_today_sunrise = atol(api_response+t[12].start);
-      api_today_sunset = atol(api_response+t[14].start);
-  
-      api_parse_result = false;
+          //reset daily water counter for all plants
+          for(int i = 0; i < maxPlants; ++i)
+          {
+            if(plants[i] == NULL)
+            {
+              continue;
+            }
+            plants[i]->resetDailyWater();
+          }
+          state_watering_today = 0;
+          //turn off lights
+          digitalWrite(pins[idxLights], HIGH);
+          sunset_reached_today = false;
+        }
+        api_today_sunrise = sunrise;
+        api_today_sunset = atol(api_response+t[14].start);
+    
+        api_parse_result = false;
+      }
+
     }
   
   
@@ -354,8 +412,7 @@ void loop()
     
     
   
-  //if we have nothing yet, try every 1000?? sec. if we have every hour? if we have something, but sunrise is more than a day in the future : we rolled over millis() - refetch TODO
-    if(!currently_watering_plant_plus1 && (api_lastConnectionTime  < (double)millis() - 50000.0 ))
+    if(got_plant_characteristics && !currently_watering_plant_plus1 && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
     {
       logger.println("api_r");
       // send out request to weather API
@@ -487,6 +544,32 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
+String extractToNextDelimiter(String str)
+{
+  //cut off at & or blank whichever comes first
+  int idxand = str.indexOf("&");
+  int idxblank = str.indexOf(" ");
+  int idx = -1;
+  
+  if(idxand != -1 && idxblank != -1)
+  {
+    idx = idxand < idxblank ? idxand : idxblank;
+  }
+  else if(idxand != -1) //idxblank is -1
+  {
+    idx = idxand;
+  }
+  else if(idxblank != -1) //idxand is -1
+  {
+    idx = idxblank;
+  }
+  else // both are -1
+  {
+    return str;
+  }
+  return str.substring(0, idx);
+}
+
 void printWebPage(WiFiClient& webserver_client)
 {
     // send a standard http response header
@@ -544,7 +627,7 @@ void printWebPage(WiFiClient& webserver_client)
     }
     webserver_client.println("<table style=\"border:0px;text-align:center;\">");
     webserver_client.println("<tr style=\"font-weight:bold\">");
-    webserver_client.println("<td>Port</td><td>Plant</td><td>Water today [ml]</td><td>Water total [l]</td><td>Action</td>");
+    webserver_client.println("<td>Port</td><td>Plant</td><td>Planned today [ml]</td><td>Watered today [ml]</td><td>Watered total [l]</td><td>Action</td>");
     webserver_client.println("</tr>");
     for(int i = 0; i < maxPlants; ++i)
     {
@@ -558,6 +641,8 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getName());
       webserver_client.print("</td><td>");
+      webserver_client.print(plants[i]->dailyWaterTotal(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise));
+      webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getDailyWater());
       webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getTotalWater());
@@ -570,6 +655,7 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("<textarea rows=\"20\" cols=\"40\">");
     webserver_client.println(logger.getLog());
     webserver_client.println("</textarea>");
+    /*
     webserver_client.println("<textarea>");
     //feed big data slowly to the bus:
     for(int i = 0; i <= strlen(api_response)/2048; ++i)
@@ -580,6 +666,7 @@ void printWebPage(WiFiClient& webserver_client)
     }
     webserver_client.println();
     webserver_client.println("</textarea>");
+    */
     webserver_client.println("</form>");
     webserver_client.println("</html>");
     /*
