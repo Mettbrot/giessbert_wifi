@@ -27,6 +27,9 @@ int wifi_status = WL_IDLE_STATUS;
 
 #define DIGITAL_CHANNELS 8
 #define SUNSET_LIGHTS true
+#define DST true
+
+const int timezone = +1;
 
 // Initialize the Wifi client library
 WiFiClient api_client;
@@ -76,6 +79,11 @@ unsigned long api_poweron_days = 0;
 bool api_parse_result = false;
 unsigned long api_today_sunrise = 0;
 unsigned long api_today_sunset = 0;
+
+int watering_sunrise_offset = 6*3600;
+int watering_sunset_offset = 0;
+
+//TODO parse today_values correctly
 
 double today_temp = 0;
 double today_humidity = 0;
@@ -155,12 +163,12 @@ void loop()
   if(waterAvailable && api_epochOffset && api_poweron_days)
   {
     //check if we need to water
-    if(state_watering_today == 0 && offsetMillis() > api_today_sunrise)
+    if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
     {
       //start watering
       selectCurrentPlantToWater();
     }
-    else if(state_watering_today == 1 && offsetMillis() > api_today_sunset)
+    else if(state_watering_today == 1 && offsetMillis() > api_today_sunset+watering_sunset_offset)
     {
       //same as before
       selectCurrentPlantToWater();
@@ -622,7 +630,36 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("<table style=\"border:0px\">");
     webserver_client.println("<tr>");
     webserver_client.print("<td>Last Weather Call</td><td>");
-    webserver_client.print(offsetMillis(api_lastCall_millis));
+    {
+      char date[25] = {0};
+      formattedDate(date, offsetMillis(api_lastCall_millis), 1, true);
+      webserver_client.print(date);
+    }
+    webserver_client.println("</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.print("<td>Poweron Days</td><td>");
+    webserver_client.print(api_poweron_days);
+    webserver_client.println("</td>");
+    webserver_client.println("</tr>");
+    webserver_client.println("<tr>");
+    webserver_client.print("<td>Next Watering</td><td>");
+    if(api_poweron_days && state_watering_today == 0)
+    {
+      char date[25] = {0};
+      formattedDate(date, api_today_sunrise+watering_sunrise_offset, 1, true);
+      webserver_client.print(date);
+    }
+    else if(api_poweron_days && state_watering_today == 1)
+    {
+      char date[25] = {0};
+      formattedDate(date, api_today_sunset+watering_sunset_offset, 1, true);
+      webserver_client.print(date);
+    }
+    else
+    {
+      webserver_client.print("-");
+    }
     webserver_client.println("</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
@@ -635,10 +672,10 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("%</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
-    webserver_client.println("<td>Weather today</td><td>25°C, clouds 56%, humidity 34%</td>");
+    webserver_client.println("<td>Weather today</td><td>X°C, clouds X%, humidity X%</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
-    webserver_client.println("<td>Weather tomorrow</td><td>20°C, clouds 2%, humidity 69%</td>");
+    webserver_client.println("<td>Weather tomorrow</td><td>X°C, clouds X%, humidity X%</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
     webserver_client.print("<td>WiFi Status </td><td>");

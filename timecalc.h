@@ -45,7 +45,7 @@ static  const uint8_t monthDays[]={31,28,31,30,31,30,31,31,30,31,30,31}; // API 
 
 void breakTime(unsigned long timeInput, tmElements_t &tm);
 
-int formattedDate(char* buf, unsigned long ts);
+int formattedDate(char* buf, unsigned long ts, int timezone, bool dst);
 
 
 #endif //TIMECALC_H

@@ -59,9 +59,21 @@ void breakTime(unsigned long timeInput, tmElements_t &tm){
   tm.Day = time + 1;     // day of month
 }
 
-int formattedDate(char* buf, unsigned long ts)
+int formattedDate(char* buf, unsigned long ts, int timezone, bool dst)
 {
+  //add timezone
+  ts = ts + 3600*timezone;
   tmElements_t tm;
   breakTime(ts, tm);
+  
+  if(dst)
+  {
+    //totally wrong an rough calculation but it fits most days and is easy
+    if(tm.Month > 3 && tm.Month < 10 || tm.Month == 3 && tm.Day > 25 || tm.Month == 10 && tm.Day < 25)
+    {
+      ts += 3600;
+      breakTime(ts, tm);
+    }
+  }
   return std::sprintf(buf, "%02u.%02u.%04u %02u:%02u:%02u", tm.Day, tm.Month, 1970+tm.Year, tm.Hour, tm.Minute, tm.Second);
 }
