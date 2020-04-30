@@ -19,6 +19,7 @@ class Plant
     unsigned long getDailyMin() const;
     unsigned long getDailyMax() const;
     unsigned long calcWaterAmout(double temp, double humidity, int clouds, unsigned long secs_p_day) const;
+    unsigned long dailyWaterTotal(double temp, double humidity, int clouds, unsigned long secs_p_day) const;
     unsigned long getDailyWater() const;
     unsigned long getTotalWater() const;
     void resetDailyWater();
