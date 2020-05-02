@@ -31,6 +31,7 @@ int wifi_status = WL_IDLE_STATUS;
 
 const int timezone = +1;
 
+
 // Initialize the Wifi client library
 WiFiClient api_client;
 
@@ -83,11 +84,19 @@ unsigned long api_today_sunset = 0;
 int watering_sunrise_offset = 6*3600;
 int watering_sunset_offset = 0;
 
-//TODO parse today_values correctly
+//MAX 7
+const unsigned int days_forecast = 2;
 
-double today_temp = 0;
-double today_humidity = 0;
-int today_clouds = 0;
+struct weather 
+{
+  double temp;
+  double humidity;
+  int clouds;
+  unsigned long sunrise;
+  unsigned long sunset;
+};
+
+struct weather forecast[days_forecast] = {0};
 
 double current_temp = 0;
 double current_humidity = 0;
@@ -361,66 +370,144 @@ void loop()
       else
       {
         //api has been called recently, parse newest weather data
-        //parse time offset:
-        int r;
-        jsmn_parser p;
-        jsmntok_t t[56]; // this is enough for global data section
-      
-        jsmn_init(&p);
-        r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
-    
-    
-        current_temp = atof(api_response+t[16].start);
-        current_humidity = atof(api_response+t[22].start);
-        current_clouds = atoi(api_response+t[28].start);
-  
-        unsigned long sunrise = atol(api_response+t[12].start);
-        //roll over day on midnight and powerup:
-        if(api_today_sunrise != sunrise)
         {
-          //roll over day here!
-          logger.println("nd");
+            //parse time offset:
+            int r;
+            jsmn_parser p;
+            jsmntok_t t[56]; // this is enough for global data section
           
-          //sync internal clock:
-          //calculate difference since last sync:
-          long unsigned api_lastEpochOffset = api_epochOffset;
-          api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
-          //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates?
-          //we dont care though, if we are 15 minutes behind...
-          logger.setOffset(api_epochOffset);
-          logger.print("diff:");
-          logger.println((double)api_epochOffset - (double)api_lastEpochOffset);
-
-          if(!api_lastEpochOffset)
-          {
-            //if api_offset was zero before this newday, this was poweron. Set to 0
-            api_poweron_days = 0;
-          }
-          else
-          {
-            ++api_poweron_days;
-          }
-  
-          //we have our newday, set interval back to normal:
-          api_interval = 3600 * 1000;
-  
-          //reset daily water counter for all plants
-          for(int i = 0; i < maxPlants; ++i)
-          {
-            if(plants[i] == NULL)
+            jsmn_init(&p);
+            r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+        
+        
+            current_temp = atof(api_response+t[16].start);
+            current_humidity = atof(api_response+t[22].start);
+            current_clouds = atoi(api_response+t[28].start);
+      
+            unsigned long sunrise = atol(api_response+t[12].start);
+            //roll over day on midnight and powerup:
+            if(api_today_sunrise != sunrise)
             {
-              continue;
+              //roll over day here!
+              logger.println("nd");
+              
+              //sync internal clock:
+              //calculate difference since last sync:
+              long unsigned api_lastEpochOffset = api_epochOffset;
+              api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+              //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates?
+              //we dont care though, if we are 15 minutes behind...
+              logger.setOffset(api_epochOffset);
+              logger.print("diff:");
+              logger.println((double)api_epochOffset - (double)api_lastEpochOffset);
+
+              if(!api_lastEpochOffset)
+              {
+                //if api_offset was zero before this newday, this was poweron. Set to 0
+                api_poweron_days = 0;
+              }
+              else
+              {
+                ++api_poweron_days;
+              }
+      
+              //we have our newday, set interval back to normal:
+              api_interval = 3600 * 1000;
+      
+              //reset daily water counter for all plants
+              for(int i = 0; i < maxPlants; ++i)
+              {
+                if(plants[i] == NULL)
+                {
+                  continue;
+                }
+                plants[i]->resetDailyWater();
+              }
+              state_watering_today = 0;
+              //turn off lights
+              digitalWrite(pins[idxLights], HIGH);
+              sunset_reached_today = false;
+              sunrise_reached_today = false;
             }
-            plants[i]->resetDailyWater();
-          }
-          state_watering_today = 0;
-          //turn off lights
-          digitalWrite(pins[idxLights], HIGH);
-          sunset_reached_today = false;
-          sunrise_reached_today = false;
+            api_today_sunrise = sunrise;
+            api_today_sunset = atol(api_response+t[14].start);
         }
-        api_today_sunrise = sunrise;
-        api_today_sunset = atol(api_response+t[14].start);
+        //parse weather forecast:
+        //search for "daily"
+        char* daily = std::strstr(api_response, "\"daily\"");
+        daily = std::strstr(daily, "{"); //go to next array start
+        if(daily)
+        {
+          unsigned int offset = 0;
+          for(int i = 0; i < days_forecast; ++i)
+          {
+            if(strlen(daily) <= offset)
+            {
+              break;
+            }
+            int r;
+            jsmn_parser p;
+            jsmntok_t t[66];
+            
+            
+            jsmn_init(&p);
+            r = jsmn_parse(&p, daily+offset, strlen(daily+offset), t, sizeof(t)/sizeof(t[0]));
+
+            forecast[i].sunrise = atoi(daily+offset+t[4].start);
+            forecast[i].sunset = atoi(daily+offset+t[6].start);
+            
+            for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
+            {
+              //temp
+              if(t[j].type == 3 && t[j].end - t[j].start == 4)
+              {
+                //could be temp, do strcmp:
+                char test[5] = {0};
+                memcpy(test, daily+offset+t[j].start, 4);
+                if(strcmp(test, "temp") == 0)
+                {
+                  //this is temp, read daily value
+                  forecast[i].temp = atof(daily+offset+t[j+3].start);
+                }
+              }
+              //humidity
+              else if(t[j].type == 3 && t[j].end - t[j].start == 8)
+              {
+                //could be humidity, do strcmp:
+                char test[9] = {0};
+                memcpy(test, daily+offset+t[j].start, 8);
+                if(strcmp(test, "humidity") == 0)
+                {
+                  //this is temp, read daily value
+                  forecast[i].humidity = atof(daily+offset+t[j+1].start);
+                }
+              }
+              //clouds
+              else if(t[j].type == 3 && t[j].end - t[j].start == 6)
+              {
+                //could be clouds, do strcmp:
+                char test[7] = {0};
+                memcpy(test, daily+offset+t[j].start, 6);
+                if(strcmp(test, "clouds") == 0)
+                {
+                  //this is clouds, read daily value
+                  forecast[i].clouds = atoi(daily+offset+t[j+1].start);
+                }
+              }
+              //stop if we are past this day
+              if(t[j].start > t[0].end)
+              {
+                break;
+              }
+            }
+            offset += t[0].end; //next read starts at next day object
+          }
+
+            
+        }
+
+    
+        //second parsing round, starting at "daily" - get weather today & tomorrow
     
         api_parse_result = false;
       }
@@ -479,7 +566,7 @@ void selectCurrentPlantToWater()
 {
   double watered = (millis() - current_watering_start_millis) * lps; //in ml
   //if this is our first plant, OR if the current plant's watering is done, switch to the next one
-  if(!currently_watering_plant_plus1 || watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise))
+  if(!currently_watering_plant_plus1 || watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise))
   {
     if(currently_watering_plant_plus1)
     {
@@ -626,7 +713,7 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("");
     webserver_client.println("<table style=\"border:0px\">");
     webserver_client.println("<tr>");
-    webserver_client.print("<td>Last Weather Call</td><td>");
+    webserver_client.print("<td>Last Weather Update</td><td>");
     {
       char date[25] = {0};
       formattedDate(date, offsetMillis(api_lastCall_millis), 1, true);
@@ -635,12 +722,12 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
-    webserver_client.print("<td>Poweron Days</td><td>");
+    webserver_client.print("<td>Poweron days</td><td>");
     webserver_client.print(api_poweron_days);
     webserver_client.println("</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
-    webserver_client.print("<td>Next Watering</td><td>");
+    webserver_client.print("<td>Next watering today</td><td>");
     if(api_poweron_days && state_watering_today == 0)
     {
       char date[25] = {0};
@@ -660,7 +747,7 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("</td>");
     webserver_client.println("</tr>");
     webserver_client.println("<tr>");
-    webserver_client.print("<td>current Weather</td><td>");
+    webserver_client.print("<td>Weather current</td><td>");
     webserver_client.print(current_temp);
     webserver_client.print("°C, clouds ");
     webserver_client.print(current_clouds);
@@ -668,12 +755,31 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.print(current_humidity);
     webserver_client.println("%</td>");
     webserver_client.println("</tr>");
-    webserver_client.println("<tr>");
-    webserver_client.println("<td>Weather today</td><td>X°C, clouds X%, humidity X%</td>");
-    webserver_client.println("</tr>");
-    webserver_client.println("<tr>");
-    webserver_client.println("<td>Weather tomorrow</td><td>X°C, clouds X%, humidity X%</td>");
-    webserver_client.println("</tr>");
+    for(int i = 0; i < days_forecast; ++i)
+    {
+      webserver_client.println("<tr>");
+      webserver_client.print("<td>Weather ");
+      if(i == 0)
+      {
+        webserver_client.print("today");
+      }
+      else
+      {
+        for(int j = 1; j < i; ++j)
+        {
+           webserver_client.print("the day after ");
+        }
+        webserver_client.print("tomorrow");
+      }
+      webserver_client.print("</td><td>");
+      webserver_client.print(forecast[i].temp);
+      webserver_client.print("°C, clouds ");
+      webserver_client.print(forecast[i].clouds);
+      webserver_client.print("%, humidity ");
+      webserver_client.print(forecast[i].humidity);
+      webserver_client.print("%</td>");
+      webserver_client.println("</tr>");
+    }
     webserver_client.println("<tr>");
     webserver_client.print("<td>WiFi Status </td><td>");
     // print the received signal strength:
@@ -707,7 +813,7 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getName());
       webserver_client.print("</td><td>");
-      webserver_client.print(plants[i]->dailyWaterTotal(today_temp, today_humidity, today_clouds, api_today_sunset - api_today_sunrise));
+      webserver_client.print(plants[i]->dailyWaterTotal(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise));
       webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getDailyWater());
       webserver_client.print("</td><td>");
