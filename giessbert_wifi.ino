@@ -59,6 +59,8 @@ const int idxLights = 0;
 const int idxPump = 1;
 const int idxPlantOffset = 2;
 
+int water_threshold = 90;
+
 volatile bool waterAvailable = false;
 
 bool sunset_reached_today = true; //disable lights until we have the first API call
@@ -123,7 +125,7 @@ void setup()
 
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
   pinMode(pins[idxPump], OUTPUT);
   digitalWrite(pins[idxPump], HIGH);
   //call once to setup variables correctly
@@ -243,7 +245,7 @@ void loop()
   }
   
   //15 minutes before the day is over (on our timing) we shorten the api calling interval to get an accurate reading on the time
-  if(elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true)) < secs_today_in15mins) //this is true if its midnight in 15 minutes
+  if(elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true))+75000 < secs_today_in15mins) //this is true if its midnight in 15 minutes
   {
     api_interval = 60*1000; // every minute
   }
@@ -529,12 +531,16 @@ void loop()
     }
 
   }
+  
+  //check water status on every loop:
+  disableEnablePump();
     
 }
 
 void disableEnablePump()
 {
-  if(digitalRead(pinWaterSensor) == LOW)
+  //only change on discrepancy between waterAvailable and actual measurement
+  if(analogRead(pinWaterSensor) < water_threshold && waterAvailable == false)
   {
     waterAvailable = true;
     //were we watering?
@@ -544,7 +550,7 @@ void disableEnablePump()
       current_watering_start_millis = millis();
     }
   }
-  else
+  else if(analogRead(pinWaterSensor) >= water_threshold && waterAvailable == true)
   {
     waterAvailable = false;
     //also stop pump right away!
