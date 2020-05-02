@@ -257,7 +257,6 @@ void loop()
         if (webserver_client.available())
         {
           char c = webserver_client.read();
-          Serial.write(c);
           if (c == '\n')
           {
             // if the current line is blank, you got two newline characters in a row.
@@ -326,7 +325,6 @@ void loop()
     while (api_client.available())
     {
       char c = api_client.read();
-      Serial.write(c);
       if(api_parse_result) //this char is the first after the empty newline
       {
         if(pos >= 20000)
@@ -355,13 +353,13 @@ void loop()
   
     if(api_parse_result)
     {
+      logger.println("api_p");
       if(!got_plant_characteristics)
       {
         //this is the characteristics call, parse differently:
       }
       else
       {
-        Serial.println();
         //api has been called recently, parse newest weather data
         //parse time offset:
         int r;
@@ -545,7 +543,6 @@ void httpRequest()
     strcpy(adr+pos, apiKey);
     pos += strlen(apiKey);
     strcpy(adr+pos, " HTTP/1.1");
-    Serial.println(adr);
 
     char serv[] = "Host: api.openweathermap.org";
 
