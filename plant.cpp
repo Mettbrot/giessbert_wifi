@@ -40,7 +40,7 @@ unsigned long Plant::calcWaterAmout(double temp, double humidity, int clouds, un
 unsigned long Plant::dailyWaterTotal(double temp, double humidity, int clouds, unsigned long secs_p_day) const
 {
   //this is strictly positive
-  return (unsigned long) ((double)_daily_amount_min_ml + (double)(_daily_amount_max_ml-_daily_amount_min_ml)*(0.5*(1-((double)clouds)/100.0) + 0.5*(1-humidity/100.0))*std::exp2(temp/15.0 - 1.0)*((double)secs_p_day /3600.0 /12.0));
+  return (unsigned long) ((double)_daily_amount_min_ml + (double)(_daily_amount_max_ml-_daily_amount_min_ml)*(0.3*(1-((double)clouds)/100.0) + 0.7*(1-humidity/100.0))*std::exp2(5*(temp/35.0 - 1.0))*((double)secs_p_day /3600.0 /13.0));
 }
 
 

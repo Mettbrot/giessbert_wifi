@@ -108,9 +108,9 @@ void setup()
 
   //setup plants statically for now TODO
   got_plant_characteristics = true;
-  plants[1] = new Plant("Cherrytomate 1", 600, 1300, 1500);
-  plants[3] = new Plant("Rispentomate 1", 400, 1700, 1500);
-  plants[4] = new Plant("Kumquats", 1000, 2600, 2500);
+  plants[1] = new Plant("Cherrytomate 1", 200, 1300, 1500);
+  plants[3] = new Plant("Rispentomate 1", 300, 1700, 1500);
+  plants[4] = new Plant("Kumquats", 300, 1800, 2500);
 
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(pinWaterSensor, INPUT_PULLUP);
