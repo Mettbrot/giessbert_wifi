@@ -150,6 +150,7 @@ void loop()
 {
   // attempt to connect to Wifi network:
   short wifi_retry_count = 0;
+  wifi_status = WiFi.status();
   while (wifi_status != WL_CONNECTED && wifi_retry_count < 5)
   {
     ++wifi_retry_count;
@@ -361,10 +362,16 @@ void loop()
         api_currentLineIsBlank = false;
       }
     }
-  
+
+    
     if(api_parse_result)
     {
       logger.println("api_p");
+      if (!api_client.connected())
+      {
+          Serial.println("disconnecting from server.");
+          api_client.stop();
+      }
       if(!got_plant_characteristics)
       {
         //this is the characteristics call, parse differently:
@@ -397,11 +404,12 @@ void loop()
               //calculate difference since last sync:
               long unsigned api_lastEpochOffset = api_epochOffset;
               api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
-              //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates?
+              //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
               //we dont care though, if we are 15 minutes behind...
               logger.setOffset(api_epochOffset);
-              logger.print("diff:");
-              logger.println((double)api_epochOffset - (double)api_lastEpochOffset);
+              logger.print("diff: ");
+              double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
+              logger.println(diff);
 
               if(!api_lastEpochOffset)
               {
