@@ -12,7 +12,6 @@
 
 #include <SPI.h>
 #include <WiFiNINA.h>
-#include <ArduinoJson.h>
 
 #include <cstring>
 
@@ -42,7 +41,7 @@ Logging logger(&Serial, 0);
 char apiserver[] = "api.openweathermap.org";
 
 //StaticJsonDocument<26000> doc;
-char* const api_response = static_cast<char*>(malloc(20000));
+char api_response[16000] = {0};
 
 //pump characteristics
 const double lps = 0.0326; //liter per second
@@ -143,7 +142,7 @@ void setup()
     digitalWrite(pins[idxPlantOffset+i], HIGH);
   }
   
-  memset(api_response, 0, 20000);
+  memset(api_response, 0, sizeof(api_response));
 }
 
 void loop()
@@ -327,19 +326,22 @@ void loop()
   
     }
     
-  
-    if(api_client.available())
-    {
-      logger.println("api_i");
-    }
+
     bool api_currentLineIsBlank = true;
     int pos = 0;
+    bool first_read = true;
     while (api_client.available())
     {
+      if(first_read)
+      {
+        //this is the first time, log event
+        logger.println("api_i");
+        first_read = false;
+      }
       char c = api_client.read();
       if(api_parse_result) //this char is the first after the empty newline
       {
-        if(pos >= 20000)
+        if(pos >= sizeof(api_response))
         {
           break;
         }
@@ -622,7 +624,7 @@ void httpRequest()
 {
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
-  memset(api_response, 0, 20000);
+  memset(api_response, 0, sizeof(api_response));
   api_client.stop();
 
   // if there's a successful connection:
