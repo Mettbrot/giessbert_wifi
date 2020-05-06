@@ -105,6 +105,7 @@ int current_clouds = 0;
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
+unsigned long wifi_lastTry_millis = 0;
 
 
 void setup()
@@ -127,8 +128,6 @@ void setup()
   //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
   pinMode(pins[idxPump], OUTPUT);
   digitalWrite(pins[idxPump], HIGH);
-  //call once to setup variables correctly
-  disableEnablePump();
   pinMode(pins[idxLights], OUTPUT);
   digitalWrite(pins[idxLights], HIGH);
 
@@ -142,7 +141,7 @@ void setup()
     digitalWrite(pins[idxPlantOffset+i], HIGH);
   }
   
-  memset(api_response, 0, sizeof(api_response));
+  //memset(api_response, 0, sizeof(api_response));
 }
 
 void loop()
@@ -150,7 +149,7 @@ void loop()
   // attempt to connect to Wifi network:
   short wifi_retry_count = 0;
   wifi_status = WiFi.status();
-  while (wifi_status != WL_CONNECTED && wifi_retry_count < 5)
+  while (wifi_status != WL_CONNECTED && wifi_retry_count < 5 && (!wifi_lastTry_millis || wifi_lastTry_millis + 10000 < millis()))
   {
     ++wifi_retry_count;
     wifi_noConnection = true;
@@ -159,7 +158,7 @@ void loop()
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
-    delay(10000); // TODO remove this!
+    wifi_lastTry_millis = millis();
   }
   if(wifi_status == WL_CONNECTED && wifi_noConnection)
   {
@@ -255,7 +254,6 @@ void loop()
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
   {
-    
     // listen for incoming clients
     WiFiClient webserver_client = webserver.available();
     if (webserver_client)
@@ -316,14 +314,10 @@ void loop()
           }
  
         }
-      }
-      // give the web browser time to receive the data
-      delay(1);
-  
+      }  
       // close the connection:
       webserver_client.stop();
       logger.println("wc_d");
-  
     }
     
 
@@ -364,7 +358,12 @@ void loop()
         api_currentLineIsBlank = false;
       }
     }
-
+    //terminate with null byte
+    if(pos >= sizeof(api_response))
+    {
+      pos = sizeof(api_response) - 1;
+    }
+    api_response[pos] = 0x0;
     
     if(api_parse_result)
     {
@@ -552,6 +551,7 @@ void disableEnablePump()
   //only change on discrepancy between waterAvailable and actual measurement
   if(analogRead(pinWaterSensor) < water_threshold && waterAvailable == false)
   {
+    logger.println("wt_t");
     waterAvailable = true;
     //were we watering?
     if(currently_watering_plant_plus1)
@@ -562,6 +562,7 @@ void disableEnablePump()
   }
   else if(analogRead(pinWaterSensor) >= water_threshold && waterAvailable == true)
   {
+    logger.println("wt_f");
     waterAvailable = false;
     //also stop pump right away!
     digitalWrite(pins[idxPump], HIGH);
@@ -624,7 +625,7 @@ void httpRequest()
 {
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
-  memset(api_response, 0, sizeof(api_response));
+  //memset(api_response, 0, sizeof(api_response));
   api_client.stop();
 
   // if there's a successful connection:
