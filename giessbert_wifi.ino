@@ -106,6 +106,7 @@ int current_clouds = 0;
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
 unsigned long wifi_lastTry_millis = 0;
+unsigned long water_lastRead_millis = 0;
 
 
 void setup()
@@ -122,8 +123,7 @@ void setup()
   plants[1] = new Plant("Cherrytomate 1", 200, 1300, 1500);
   plants[3] = new Plant("Rispentomate 1", 300, 1700, 1500);
   plants[4] = new Plant("Kumquats", 300, 1800, 2500);
-
-  pinMode(LED_BUILTIN, OUTPUT); 
+ 
   pinMode(pinWaterSensor, INPUT_PULLUP);
   //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
   pinMode(pins[idxPump], OUTPUT);
@@ -443,6 +443,7 @@ void loop()
             api_today_sunrise = sunrise;
             api_today_sunset = atol(api_response+t[14].start);
         }
+        //second parsing round, starting at "daily" - get weather today & tomorrow
         //parse weather forecast:
         //search for "daily"
         char* daily = std::strstr(api_response, "\"daily\"");
@@ -513,24 +514,11 @@ void loop()
             }
             offset += t[0].end; //next read starts at next day object
           }
-
-            
         }
-
-    
-        //second parsing round, starting at "daily" - get weather today & tomorrow
-    
         api_parse_result = false;
       }
-
     }
-  
-  
-  
-  
-    
-    
-  
+
     if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
     {
       logger.println("api_r");
@@ -538,11 +526,15 @@ void loop()
       api_lastCall_millis = millis();
       httpRequest();
     }
-
+    
   }
   
-  //check water status on every loop:
-  disableEnablePump();
+  //check water status every 100ms:
+  if(water_lastRead_millis + 100 < millis())
+  {
+    disableEnablePump();
+    water_lastRead_millis = millis();
+  }
     
 }
 
