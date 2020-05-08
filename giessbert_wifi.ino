@@ -253,73 +253,6 @@ void loop()
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
   {
-    // listen for incoming clients
-    WiFiClient webserver_client = webserver.available();
-    if (webserver_client)
-    {
-      logger.println("wc_c");
-      // an http request ends with a blank line
-      String currentLine = "";
-      while (webserver_client.connected())
-      {
-        if (webserver_client.available())
-        {
-          char c = webserver_client.read();
-          if (c == '\n')
-          {
-            // if the current line is blank, you got two newline characters in a row.
-            // that's the end of the client HTTP request, so send a response:
-            if (currentLine.length() == 0)
-            {
-              printWebPage(webserver_client);
-              break;
-            }
-            else
-            {
-              // you're starting a new line
-              currentLine = "";
-            }
-          }
-          else if (c != '\r')
-          {
-            // you've gotten a character on the current line
-            currentLine += c;
-            
-            //check requests from the web here:
-            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
-            {
-              //we can analyze this:
-              int lights = currentLine.indexOf("lights=");
-              int water200 = currentLine.indexOf("water200=");
-              if(lights != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(lights+7));
-                if(str == "on")
-                {
-                  logger.println("m_lon");
-                  digitalWrite(pins[idxLights], LOW);
-                }
-                else if(str == "off")
-                {
-                  logger.println("m_loff");
-                  digitalWrite(pins[idxLights], HIGH);
-                }
-              }
-              if(water200 != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(water200+9));
-              }
-            }
-          }
- 
-        }
-      }  
-      // close the connection:
-      webserver_client.stop();
-      logger.println("wc_d");
-    }
-    
-
     bool api_currentLineIsBlank = true;
     int pos = 0;
     bool first_read = true;
@@ -519,6 +452,74 @@ void loop()
       }
     }
 
+    
+    // listen for incoming clients
+    WiFiClient webserver_client = webserver.available();
+    if (webserver_client)
+    {
+      logger.println("wc_c");
+      // an http request ends with a blank line
+      String currentLine = "";
+      while (webserver_client.connected())
+      {
+        if (webserver_client.available())
+        {
+          char c = webserver_client.read();
+          if (c == '\n')
+          {
+            // if the current line is blank, you got two newline characters in a row.
+            // that's the end of the client HTTP request, so send a response:
+            if (currentLine.length() == 0)
+            {
+              printWebPage(webserver_client);
+              break;
+            }
+            else
+            {
+              // you're starting a new line
+              currentLine = "";
+            }
+          }
+          else if (c != '\r')
+          {
+            // you've gotten a character on the current line
+            currentLine += c;
+            
+            //check requests from the web here:
+            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
+            {
+              //we can analyze this:
+              int lights = currentLine.indexOf("lights=");
+              int water200 = currentLine.indexOf("water200=");
+              if(lights != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(lights+7));
+                if(str == "on")
+                {
+                  logger.println("m_lon");
+                  digitalWrite(pins[idxLights], LOW);
+                }
+                else if(str == "off")
+                {
+                  logger.println("m_loff");
+                  digitalWrite(pins[idxLights], HIGH);
+                }
+              }
+              if(water200 != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(water200+9));
+              }
+            }
+          }
+ 
+        }
+      }  
+      // close the connection:
+      webserver_client.stop();
+      logger.println("wc_d");
+    }
+    
+
     if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
     {
       logger.println("api_r");
@@ -558,7 +559,7 @@ void disableEnablePump()
     logger.println("wt_f");
     waterAvailable = false;
     //also stop pump right away!
-    digitalWrite(pins[idxPump], HIGH);
+    //digitalWrite(pins[idxPump], HIGH);
     //were we watering?
     if(currently_watering_plant_plus1)
     {
