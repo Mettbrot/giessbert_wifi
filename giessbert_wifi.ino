@@ -141,21 +141,20 @@ void setup()
     digitalWrite(pins[idxPlantOffset+i], HIGH);
   }
   
-  //memset(api_response, 0, sizeof(api_response));
 }
 
 void loop()
 {
   // attempt to connect to Wifi network:
-  short wifi_retry_count = 0;
   wifi_status = WiFi.status();
-  while (wifi_status != WL_CONNECTED && wifi_retry_count < 5 && (!wifi_lastTry_millis || wifi_lastTry_millis + 10000 < millis()))
+  while (wifi_status != WL_CONNECTED && (!wifi_lastTry_millis || wifi_lastTry_millis + 10000 < millis()))
   {
-    ++wifi_retry_count;
     wifi_noConnection = true;
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
-    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    //set hostname
+    WiFi.setHostname("giessbert");
+    // Connect to WPA/WPA2 network.
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
     wifi_lastTry_millis = millis();
@@ -376,6 +375,7 @@ void loop()
       if(!got_plant_characteristics)
       {
         //this is the characteristics call, parse differently:
+        got_plant_characteristics = true;
       }
       else
       {
@@ -403,7 +403,7 @@ void loop()
               
               //sync internal clock:
               //calculate difference since last sync:
-              long unsigned api_lastEpochOffset = api_epochOffset;
+              unsigned long api_lastEpochOffset = api_epochOffset;
               api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
               //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
               //we dont care though, if we are 15 minutes behind...
@@ -540,8 +540,9 @@ void loop()
 
 void disableEnablePump()
 {
+  int analog = analogRead(pinWaterSensor);
   //only change on discrepancy between waterAvailable and actual measurement
-  if(analogRead(pinWaterSensor) < water_threshold && waterAvailable == false)
+  if(analog < water_threshold && waterAvailable == false)
   {
     logger.println("wt_t");
     waterAvailable = true;
@@ -552,7 +553,7 @@ void disableEnablePump()
       current_watering_start_millis = millis();
     }
   }
-  else if(analogRead(pinWaterSensor) >= water_threshold && waterAvailable == true)
+  else if(analog >= water_threshold && waterAvailable == true)
   {
     logger.println("wt_f");
     waterAvailable = false;

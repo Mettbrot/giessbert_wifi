@@ -17,7 +17,7 @@ Logging::~Logging()
 }
 
 
-void Logging::setOffset(unsigned long offset)
+void Logging::setOffset(const unsigned long offset)
 {
     _time_offset = offset;
 }
@@ -37,7 +37,7 @@ size_t Logging::println(const char* str)
 size_t Logging::println(const double doubl)
 {
     char number[100] = {0};
-    std::sprintf(number, "%d", doubl);
+    std::sprintf(number, "%.2f", doubl);
     return println(number);
 }
 
