@@ -40,34 +40,8 @@ WiFiClient api_client;
 // server address:
 char apiserver[] = "api.openweathermap.org";
 
-//StaticJsonDocument<26000> doc;
 char api_response[16000] = {0};
 
-//pump characteristics
-const double lps = 0.0326; //liter per second
-const double lps_large = 0.0517; //liter per second with only larger diameter
-
-const int maxPlants = DIGITAL_CHANNELS-2;
-
-//mapping table
-int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
-const int pinWaterSensor = A1;
-const int idxLights = 0;
-const int idxPump = 1;
-const int idxPlantOffset = 2;
-
-int water_threshold = 90;
-
-volatile bool waterAvailable = false;
-
-bool sunset_reached_today = true; //disable lights until we have the first API call
-bool sunrise_reached_today = true;
-
-int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
-int currently_watering_plant_plus1 = 0;
-unsigned long current_watering_start_millis = 0;
-
-bool got_plant_characteristics = false;
 
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
 unsigned long api_epochOffset = 0;
@@ -77,34 +51,10 @@ unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
 unsigned long api_poweron_days = 0;
 
 bool api_parse_result = false;
-unsigned long api_today_sunrise = 0;
-unsigned long api_today_sunset = 0;
-
-int watering_sunrise_offset = 6*3600;
-int watering_sunset_offset = 0;
-
-//MAX 7
-const unsigned int days_forecast = 2;
-
-struct weather 
-{
-  double temp;
-  double humidity;
-  int clouds;
-  unsigned long sunrise;
-  unsigned long sunset;
-};
-
-struct weather forecast[days_forecast] = {0};
-
-double current_temp = 0;
-double current_humidity = 0;
-int current_clouds = 0;
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
 unsigned long wifi_lastTry_millis = 0;
-unsigned long water_lastRead_millis = 0;
 
 
 void setup()
@@ -116,10 +66,7 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  //setup plants statically for now TODO
-  got_plant_characteristics = true;
 
-  
 }
 
 void loop()
@@ -226,22 +173,20 @@ void loop()
             if (currentLineBlank)
             {
 
-
-
-    // send a standard http response header
-    webserver_client.println("HTTP/1.1 200 OK");
-    webserver_client.println("Content-Type: text/html");
-    webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
-    webserver_client.println();
-
-    webserver_client.println("<!DOCTYPE HTML>");
-    webserver_client.println("<html>");
-    webserver_client.println("<head>");
-    webserver_client.println("<meta charset=\"utf-8\">");
-    webserver_client.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-    webserver_client.println("</head>");
-    webserver_client.println("<h1>Gießbert 4.0</h1>");
-    webserver_client.println("</html>");
+              // send a standard http response header
+              webserver_client.println("HTTP/1.1 200 OK");
+              webserver_client.println("Content-Type: text/html");
+              webserver_client.println("Connection: close");  // the connection will be closed after completion of the response
+              webserver_client.println();
+          
+              webserver_client.println("<!DOCTYPE HTML>");
+              webserver_client.println("<html>");
+              webserver_client.println("<head>");
+              webserver_client.println("<meta charset=\"utf-8\">");
+              webserver_client.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+              webserver_client.println("</head>");
+              webserver_client.println("<h1>Website</h1>");
+              webserver_client.println("</html>");
               break;
             }
             else
