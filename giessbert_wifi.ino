@@ -13,7 +13,6 @@
 #include <SPI.h>
 #include <WiFiNINA.h>
 
-#include <cstring>
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 //#include "logging.h"
@@ -25,20 +24,12 @@
 int wifi_status = WL_IDLE_STATUS;
 
 #define DIGITAL_CHANNELS 8
-#define SUNSET_LIGHTS true
-#define DST true
-
-const int timezone = +1;
-
 
 // Initialize the Wifi client library
-WiFiClient api_client;
-
-//Logging logger(0);
-
+WiFiSSLClient api_client;
 
 // server address:
-char apiserver[] = "api.openweathermap.org";
+char apiserver[] = "www.google.com";
 
 char api_response[16000] = {0};
 
@@ -61,7 +52,7 @@ void setup()
 {
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
-  //while (!Serial)
+  while (!Serial)
   {
     ; // wait for serial port to connect. Needed for native USB port only
   }
@@ -79,7 +70,7 @@ void loop()
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
     //set hostname
-    WiFi.setHostname("giessbert");
+    WiFi.setHostname("arduino");
     // Connect to WPA/WPA2 network.
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -237,26 +228,8 @@ void httpRequest()
   {
     Serial.println("connecting...");
     // send the HTTP PUT request:
-    char adr[120] = {0};
-    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
-    int po = strlen("GET /data/2.5/onecall?units=metric&lat=");
-    strcpy(adr+po, lat);
-    po += strlen(lat);
-    strcpy(adr+po, "&lon=");
-    po += strlen("&lon=");
-    strcpy(adr+po, lon);
-    po += strlen(lon);
-    strcpy(adr+po, "&appid=");
-    po += strlen("&appid=");
-    strcpy(adr+po, apiKey);
-    po += strlen(apiKey);
-    strcpy(adr+po, " HTTP/1.1");
-
-    char serv[] = "Host: api.openweathermap.org";
-
-    api_client.println(adr);
-    api_client.println(serv);
-    api_client.println("User-Agent: ArduinoWiFi/1.1");
+    api_client.println("GET / HTTP/1.1");
+    api_client.println("Host: www.google.com");
     api_client.println("Connection: close");
     api_client.println();
 
