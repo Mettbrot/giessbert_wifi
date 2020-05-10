@@ -17,10 +17,10 @@
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 //#include "logging.h"
-#include "plant.h"
-#include "timecalc.h"
+//#include "plant.h"
+//#include "timecalc.h"
 
-#include "jsmn.h"
+//#include "jsmn.h"
 
 int wifi_status = WL_IDLE_STATUS;
 
@@ -48,8 +48,6 @@ const double lps = 0.0326; //liter per second
 const double lps_large = 0.0517; //liter per second with only larger diameter
 
 const int maxPlants = DIGITAL_CHANNELS-2;
-
-Plant* plants[maxPlants] = {NULL};
 
 //mapping table
 int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
@@ -215,7 +213,7 @@ void loop()
     {
       Serial.println("wc_c");
       // an http request ends with a blank line
-      String currentLine = "";
+      bool currentLineBlank = true;
       while (webserver_client.connected())
       {
         if (webserver_client.available())
@@ -225,7 +223,7 @@ void loop()
           {
             // if the current line is blank, you got two newline characters in a row.
             // that's the end of the client HTTP request, so send a response:
-            if (currentLine.length() == 0)
+            if (currentLineBlank)
             {
 
 
@@ -249,13 +247,13 @@ void loop()
             else
             {
               // you're starting a new line
-              currentLine = "";
+              currentLineBlank = true;
             }
           }
           else if (c != '\r')
           {
             // you've gotten a character on the current line
-            currentLine += c;
+            currentLineBlank = false;
             
           }
  
