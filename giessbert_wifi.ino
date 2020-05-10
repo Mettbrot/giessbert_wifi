@@ -267,7 +267,7 @@ void loop()
     }
     
 
-    if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
+    if(api_lastConnectionTime  < (double)millis() - (double)api_interval)
     {
       Serial.println("api_r");
       // send out request to weather API
@@ -280,20 +280,7 @@ void loop()
 }
 
 
-unsigned long offsetMillis(unsigned long mil)
-{
-  return api_epochOffset + (unsigned long)((double) mil / 1000.0);
-}
 
-unsigned long offsetMillis()
-{
-  return offsetMillis(millis());
-}
-
-unsigned long now()
-{
-  return offsetMillis();
-}
 
 // this method makes a HTTP connection to the server:
 void httpRequest()
@@ -309,18 +296,18 @@ void httpRequest()
     // send the HTTP PUT request:
     char adr[120] = {0};
     strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
-    int pos = strlen("GET /data/2.5/onecall?units=metric&lat=");
-    strcpy(adr+pos, lat);
-    pos += strlen(lat);
-    strcpy(adr+pos, "&lon=");
-    pos += strlen("&lon=");
-    strcpy(adr+pos, lon);
-    pos += strlen(lon);
-    strcpy(adr+pos, "&appid=");
-    pos += strlen("&appid=");
-    strcpy(adr+pos, apiKey);
-    pos += strlen(apiKey);
-    strcpy(adr+pos, " HTTP/1.1");
+    int po = strlen("GET /data/2.5/onecall?units=metric&lat=");
+    strcpy(adr+po, lat);
+    po += strlen(lat);
+    strcpy(adr+po, "&lon=");
+    po += strlen("&lon=");
+    strcpy(adr+po, lon);
+    po += strlen(lon);
+    strcpy(adr+po, "&appid=");
+    po += strlen("&appid=");
+    strcpy(adr+po, apiKey);
+    po += strlen(apiKey);
+    strcpy(adr+po, " HTTP/1.1");
 
     char serv[] = "Host: api.openweathermap.org";
 
