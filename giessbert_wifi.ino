@@ -120,26 +120,7 @@ void setup()
 
   //setup plants statically for now TODO
   got_plant_characteristics = true;
-  plants[1] = new Plant("Cherrytomate 1", 200, 1300, 1500);
-  plants[3] = new Plant("Rispentomate 1", 300, 1700, 1500);
-  plants[4] = new Plant("Kumquats", 300, 1800, 2500);
- 
-  pinMode(pinWaterSensor, INPUT_PULLUP);
-  //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
-  pinMode(pins[idxPump], OUTPUT);
-  digitalWrite(pins[idxPump], HIGH);
-  pinMode(pins[idxLights], OUTPUT);
-  digitalWrite(pins[idxLights], HIGH);
 
-  for(int i = 0; i < maxPlants; ++i)
-  {
-    if(plants[i] == NULL)
-    {
-      continue;
-    }
-    pinMode(pins[idxPlantOffset+i], OUTPUT);
-    digitalWrite(pins[idxPlantOffset+i], HIGH);
-  }
   
 }
 
@@ -168,71 +149,6 @@ void loop()
     webserver.begin();
   }
 
-  //check if we can water
-  if(waterAvailable && api_epochOffset && api_poweron_days)
-  {
-    //check if we need to water
-    if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
-    {
-      //start watering
-      selectCurrentPlantToWater();
-    }
-    else if(state_watering_today == 1 && offsetMillis() > api_today_sunset+watering_sunset_offset)
-    {
-      //same as before
-      selectCurrentPlantToWater();
-    }
-    //TODO even more states???
-  }
-
-  //check if we are done watering for now
-  if(currently_watering_plant_plus1 == maxPlants+1)
-  {
-    //we watered all plants
-    currently_watering_plant_plus1 = 0;
-    ++state_watering_today;
-    Serial.print("w_d");
-    Serial.println(state_watering_today);
-    //disable pump
-    digitalWrite(pins[idxPump], HIGH);
-    //disable all valves
-    for(int i = 0; i < maxPlants; ++i)
-    {
-      if(plants[i] == NULL)
-      {
-        continue;
-      }
-      digitalWrite(pins[idxPlantOffset+i], HIGH);
-    }
-  }
-
-  //watering variables were set, turn on valves and pump
-  if(waterAvailable && currently_watering_plant_plus1)
-  {
-    //turn on pump and one valve
-    digitalWrite(pins[idxPump], LOW);
-    digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], LOW);
-
-    for(int i = 0; i < maxPlants; ++i)
-    {
-      if(plants[i] == NULL)
-      {
-        continue;
-      }
-      if(i == currently_watering_plant_plus1-1)
-      {
-        continue;
-      }
-      //disable all other valves
-      digitalWrite(pins[idxPlantOffset+i], HIGH);
-    }
-  }
-  else
-  {
-    //for safety on every loop
-    digitalWrite(pins[idxPump], HIGH);
-  }
-          
 
   //if its sunset turn on the lights:
   if(SUNSET_LIGHTS && !sunset_reached_today && now() > api_today_sunset)
