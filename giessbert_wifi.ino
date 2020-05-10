@@ -16,7 +16,7 @@
 #include <cstring>
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
-#include "logging.h"
+//#include "logging.h"
 #include "plant.h"
 #include "timecalc.h"
 
@@ -34,7 +34,7 @@ const int timezone = +1;
 // Initialize the Wifi client library
 WiFiClient api_client;
 
-Logging logger(0);
+//Logging logger(0);
 
 
 // server address:
@@ -191,8 +191,8 @@ void loop()
     //we watered all plants
     currently_watering_plant_plus1 = 0;
     ++state_watering_today;
-    logger.print("w_d");
-    logger.println(state_watering_today);
+    Serial.print("w_d");
+    Serial.println(state_watering_today);
     //disable pump
     digitalWrite(pins[idxPump], HIGH);
     //disable all valves
@@ -261,7 +261,7 @@ void loop()
       if(first_read)
       {
         //this is the first time, log event
-        logger.println("api_i");
+        Serial.println("api_i");
         first_read = false;
       }
       char c = api_client.read();
@@ -299,7 +299,7 @@ void loop()
     
     if(api_parse_result)
     {
-      logger.println("api_p");
+      Serial.println("api_p");
       if (!api_client.connected())
       {
           Serial.println("disconnecting from server.");
@@ -332,7 +332,7 @@ void loop()
             if(api_today_sunrise != sunrise)
             {
               //roll over day here!
-              logger.println("nd");
+              Serial.println("nd");
               
               //sync internal clock:
               //calculate difference since last sync:
@@ -340,10 +340,10 @@ void loop()
               api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
               //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
               //we dont care though, if we are 15 minutes behind...
-              logger.setOffset(api_epochOffset);
-              logger.print("diff: ");
+              //Serial.setOffset(api_epochOffset);
+              Serial.print("diff: ");
               double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
-              logger.println(diff);
+              Serial.println(diff);
 
               if(!api_lastEpochOffset)
               {
@@ -356,7 +356,7 @@ void loop()
               }
       
               //we have our newday, set interval back to normal:
-              api_interval = 3600 * 1000;
+              //api_interval = 3600 * 1000;
       
               //reset daily water counter for all plants
               for(int i = 0; i < maxPlants; ++i)
@@ -457,7 +457,7 @@ void loop()
     WiFiClient webserver_client = webserver.available();
     if (webserver_client)
     {
-      logger.println("wc_c");
+      Serial.println("wc_c");
       // an http request ends with a blank line
       String currentLine = "";
       while (webserver_client.connected())
@@ -496,12 +496,12 @@ void loop()
                 String str = extractToNextDelimiter(currentLine.substring(lights+7));
                 if(str == "on")
                 {
-                  logger.println("m_lon");
+                  Serial.println("m_lon");
                   digitalWrite(pins[idxLights], LOW);
                 }
                 else if(str == "off")
                 {
-                  logger.println("m_loff");
+                  Serial.println("m_loff");
                   digitalWrite(pins[idxLights], HIGH);
                 }
               }
@@ -516,13 +516,13 @@ void loop()
       }  
       // close the connection:
       webserver_client.stop();
-      logger.println("wc_d");
+      Serial.println("wc_d");
     }
     
 
     if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
     {
-      logger.println("api_r");
+      Serial.println("api_r");
       // send out request to weather API
       api_lastCall_millis = millis();
       httpRequest();
@@ -545,7 +545,7 @@ void disableEnablePump()
   //only change on discrepancy between waterAvailable and actual measurement
   if(analog < water_threshold && waterAvailable == false)
   {
-    logger.println("wt_t");
+    Serial.println("wt_t");
     waterAvailable = true;
     //were we watering?
     if(currently_watering_plant_plus1)
@@ -556,7 +556,7 @@ void disableEnablePump()
   }
   else if(analog >= water_threshold && waterAvailable == true)
   {
-    logger.println("wt_f");
+    Serial.println("wt_f");
     waterAvailable = false;
     //also stop pump right away!
     //digitalWrite(pins[idxPump], HIGH);
@@ -663,7 +663,7 @@ void httpRequest()
 void printWifiStatus()
 {
   // print the SSID of the network you're attached to:
-  logger.println("wf_c");
+  Serial.println("wf_c");
   Serial.println(WiFi.SSID());
 
   // print your WiFi shield's IP address:
@@ -835,7 +835,7 @@ void printWebPage(WiFiClient& webserver_client)
     }
     webserver_client.println("</table>");
     webserver_client.println("<textarea rows=\"20\" cols=\"40\">");
-    webserver_client.println(logger.getLog());
+    //webserver_client.println(logger.getLog());
     webserver_client.println("</textarea>");
     /*
     webserver_client.println("<textarea>");
