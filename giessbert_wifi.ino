@@ -257,31 +257,6 @@ void loop()
             // you've gotten a character on the current line
             currentLine += c;
             
-            //check requests from the web here:
-            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
-            {
-              //we can analyze this:
-              int lights = currentLine.indexOf("lights=");
-              int water200 = currentLine.indexOf("water200=");
-              if(lights != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(lights+7));
-                if(str == "on")
-                {
-                  Serial.println("m_lon");
-                  digitalWrite(pins[idxLights], LOW);
-                }
-                else if(str == "off")
-                {
-                  Serial.println("m_loff");
-                  digitalWrite(pins[idxLights], HIGH);
-                }
-              }
-              if(water200 != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(water200+9));
-              }
-            }
           }
  
         }
@@ -382,30 +357,4 @@ void printWifiStatus()
   Serial.print("signal strength (RSSI):");
   Serial.print(rssi);
   Serial.println(" dBm");
-}
-
-String extractToNextDelimiter(String str)
-{
-  //cut off at & or blank whichever comes first
-  int idxand = str.indexOf("&");
-  int idxblank = str.indexOf(" ");
-  int idx = -1;
-  
-  if(idxand != -1 && idxblank != -1)
-  {
-    idx = idxand < idxblank ? idxand : idxblank;
-  }
-  else if(idxand != -1) //idxblank is -1
-  {
-    idx = idxand;
-  }
-  else if(idxblank != -1) //idxand is -1
-  {
-    idx = idxblank;
-  }
-  else // both are -1
-  {
-    return str;
-  }
-  return str.substring(0, idx);
 }
