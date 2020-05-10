@@ -227,241 +227,9 @@ void loop()
             // that's the end of the client HTTP request, so send a response:
             if (currentLine.length() == 0)
             {
-              printWebPage(webserver_client);
-              break;
-            }
-            else
-            {
-              // you're starting a new line
-              currentLine = "";
-            }
-          }
-          else if (c != '\r')
-          {
-            // you've gotten a character on the current line
-            currentLine += c;
-            
-            //check requests from the web here:
-            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
-            {
-              //we can analyze this:
-              int lights = currentLine.indexOf("lights=");
-              int water200 = currentLine.indexOf("water200=");
-              if(lights != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(lights+7));
-                if(str == "on")
-                {
-                  Serial.println("m_lon");
-                  digitalWrite(pins[idxLights], LOW);
-                }
-                else if(str == "off")
-                {
-                  Serial.println("m_loff");
-                  digitalWrite(pins[idxLights], HIGH);
-                }
-              }
-              if(water200 != -1)
-              {
-                String str = extractToNextDelimiter(currentLine.substring(water200+9));
-              }
-            }
-          }
- 
-        }
-      }  
-      // close the connection:
-      webserver_client.stop();
-      Serial.println("wc_d");
-    }
-    
-
-    if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
-    {
-      Serial.println("api_r");
-      // send out request to weather API
-      api_lastCall_millis = millis();
-      httpRequest();
-    }
-    
-  }
-  
-  //check water status every 100ms:
-  if(water_lastRead_millis + 100 < millis())
-  {
-    disableEnablePump();
-    water_lastRead_millis = millis();
-  }
-    
-}
-
-void disableEnablePump()
-{
-  int analog = analogRead(pinWaterSensor);
-  //only change on discrepancy between waterAvailable and actual measurement
-  if(analog < water_threshold && waterAvailable == false)
-  {
-    Serial.println("wt_t");
-    waterAvailable = true;
-    //were we watering?
-    if(currently_watering_plant_plus1)
-    {
-      //reset millis of current watering, and continue
-      current_watering_start_millis = millis();
-    }
-  }
-  else if(analog >= water_threshold && waterAvailable == true)
-  {
-    Serial.println("wt_f");
-    waterAvailable = false;
-    //also stop pump right away!
-    //digitalWrite(pins[idxPump], HIGH);
-    //were we watering?
-    if(currently_watering_plant_plus1)
-    {
-      //also stop valve of this plant:
-      digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], HIGH);
-      //and save already watered amount:
-      
-      double watered = (millis() - current_watering_start_millis) * lps; //in ml
-      plants[currently_watering_plant_plus1-1]->addWater(watered);
-    }
-  }
-}
-
-void selectCurrentPlantToWater()
-{
-  double watered = (millis() - current_watering_start_millis) * lps; //in ml
-  //if this is our first plant, OR if the current plant's watering is done, switch to the next one
-  if(!currently_watering_plant_plus1 || watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise))
-  {
-    if(currently_watering_plant_plus1)
-    {
-      //save water amount to plant:
-      plants[currently_watering_plant_plus1-1]->addWater(watered);
-    }
-    //next plant
-    for(int i = currently_watering_plant_plus1; i <= maxPlants; ++i) //allow to go to maxPlants to detect state after last plant
-    {
-      if(plants[i] == NULL)
-      {
-        continue;
-      }            
-      //start watering of next plant:
-      current_watering_start_millis = millis();
-      currently_watering_plant_plus1 = i+1;
-      break; //break if we found a plant
-    }
-  }
-}
-
-unsigned long offsetMillis(unsigned long mil)
-{
-  return api_epochOffset + (unsigned long)((double) mil / 1000.0);
-}
-
-unsigned long offsetMillis()
-{
-  return offsetMillis(millis());
-}
-
-unsigned long now()
-{
-  return offsetMillis();
-}
-
-// this method makes a HTTP connection to the server:
-void httpRequest()
-{
-  // close any connection before send a new request.
-  // This will free the socket on the WiFi shield
-  api_client.stop();
-
-  // if there's a successful connection:
-  if (api_client.connectSSL(apiserver, 443))
-  {
-    Serial.println("connecting...");
-    // send the HTTP PUT request:
-    char adr[120] = {0};
-    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
-    int pos = strlen("GET /data/2.5/onecall?units=metric&lat=");
-    strcpy(adr+pos, lat);
-    pos += strlen(lat);
-    strcpy(adr+pos, "&lon=");
-    pos += strlen("&lon=");
-    strcpy(adr+pos, lon);
-    pos += strlen(lon);
-    strcpy(adr+pos, "&appid=");
-    pos += strlen("&appid=");
-    strcpy(adr+pos, apiKey);
-    pos += strlen(apiKey);
-    strcpy(adr+pos, " HTTP/1.1");
-
-    char serv[] = "Host: api.openweathermap.org";
-
-    api_client.println(adr);
-    api_client.println(serv);
-    api_client.println("User-Agent: ArduinoWiFi/1.1");
-    api_client.println("Connection: close");
-    api_client.println();
-
-    // note the time that the connection was made:
-    api_lastConnectionTime = millis();
-  }
-  else
-  {
-    // if you couldn't make a connection:
-    Serial.println("connection failed");
-  }
-}
 
 
-void printWifiStatus()
-{
-  // print the SSID of the network you're attached to:
-  Serial.println("wf_c");
-  Serial.println(WiFi.SSID());
 
-  // print your WiFi shield's IP address:
-  IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-
-  // print the received signal strength:
-  long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
-}
-
-String extractToNextDelimiter(String str)
-{
-  //cut off at & or blank whichever comes first
-  int idxand = str.indexOf("&");
-  int idxblank = str.indexOf(" ");
-  int idx = -1;
-  
-  if(idxand != -1 && idxblank != -1)
-  {
-    idx = idxand < idxblank ? idxand : idxblank;
-  }
-  else if(idxand != -1) //idxblank is -1
-  {
-    idx = idxand;
-  }
-  else if(idxblank != -1) //idxand is -1
-  {
-    idx = idxblank;
-  }
-  else // both are -1
-  {
-    return str;
-  }
-  return str.substring(0, idx);
-}
-
-void printWebPage(WiFiClient& webserver_client)
-{
     // send a standard http response header
     webserver_client.println("HTTP/1.1 200 OK");
     webserver_client.println("Content-Type: text/html");
@@ -607,16 +375,168 @@ void printWebPage(WiFiClient& webserver_client)
     */
     webserver_client.println("</form>");
     webserver_client.println("</html>");
-    /*
-  // output the value of each analog input pin
-  for (int analogChannel = 0; analogChannel < 6; analogChannel++)
-  {
-    int sensorReading = analogRead(analogChannel);
-    webserver_client.print("analog input ");
-    webserver_client.print(analogChannel);
-    webserver_client.print(" is ");
-    webserver_client.print(sensorReading);
-    webserver_client.println("<br />");
+              break;
+            }
+            else
+            {
+              // you're starting a new line
+              currentLine = "";
+            }
+          }
+          else if (c != '\r')
+          {
+            // you've gotten a character on the current line
+            currentLine += c;
+            
+            //check requests from the web here:
+            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
+            {
+              //we can analyze this:
+              int lights = currentLine.indexOf("lights=");
+              int water200 = currentLine.indexOf("water200=");
+              if(lights != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(lights+7));
+                if(str == "on")
+                {
+                  Serial.println("m_lon");
+                  digitalWrite(pins[idxLights], LOW);
+                }
+                else if(str == "off")
+                {
+                  Serial.println("m_loff");
+                  digitalWrite(pins[idxLights], HIGH);
+                }
+              }
+              if(water200 != -1)
+              {
+                String str = extractToNextDelimiter(currentLine.substring(water200+9));
+              }
+            }
+          }
+ 
+        }
+      }  
+      // close the connection:
+      webserver_client.stop();
+      Serial.println("wc_d");
+    }
+    
+
+    if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
+    {
+      Serial.println("api_r");
+      // send out request to weather API
+      api_lastCall_millis = millis();
+      httpRequest();
+    }
+    
   }
-  */
+    
+}
+
+
+unsigned long offsetMillis(unsigned long mil)
+{
+  return api_epochOffset + (unsigned long)((double) mil / 1000.0);
+}
+
+unsigned long offsetMillis()
+{
+  return offsetMillis(millis());
+}
+
+unsigned long now()
+{
+  return offsetMillis();
+}
+
+// this method makes a HTTP connection to the server:
+void httpRequest()
+{
+  // close any connection before send a new request.
+  // This will free the socket on the WiFi shield
+  api_client.stop();
+
+  // if there's a successful connection:
+  if (api_client.connectSSL(apiserver, 443))
+  {
+    Serial.println("connecting...");
+    // send the HTTP PUT request:
+    char adr[120] = {0};
+    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
+    int pos = strlen("GET /data/2.5/onecall?units=metric&lat=");
+    strcpy(adr+pos, lat);
+    pos += strlen(lat);
+    strcpy(adr+pos, "&lon=");
+    pos += strlen("&lon=");
+    strcpy(adr+pos, lon);
+    pos += strlen(lon);
+    strcpy(adr+pos, "&appid=");
+    pos += strlen("&appid=");
+    strcpy(adr+pos, apiKey);
+    pos += strlen(apiKey);
+    strcpy(adr+pos, " HTTP/1.1");
+
+    char serv[] = "Host: api.openweathermap.org";
+
+    api_client.println(adr);
+    api_client.println(serv);
+    api_client.println("User-Agent: ArduinoWiFi/1.1");
+    api_client.println("Connection: close");
+    api_client.println();
+
+    // note the time that the connection was made:
+    api_lastConnectionTime = millis();
+  }
+  else
+  {
+    // if you couldn't make a connection:
+    Serial.println("connection failed");
+  }
+}
+
+
+void printWifiStatus()
+{
+  // print the SSID of the network you're attached to:
+  Serial.println("wf_c");
+  Serial.println(WiFi.SSID());
+
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+}
+
+String extractToNextDelimiter(String str)
+{
+  //cut off at & or blank whichever comes first
+  int idxand = str.indexOf("&");
+  int idxblank = str.indexOf(" ");
+  int idx = -1;
+  
+  if(idxand != -1 && idxblank != -1)
+  {
+    idx = idxand < idxblank ? idxand : idxblank;
+  }
+  else if(idxand != -1) //idxblank is -1
+  {
+    idx = idxand;
+  }
+  else if(idxblank != -1) //idxand is -1
+  {
+    idx = idxblank;
+  }
+  else // both are -1
+  {
+    return str;
+  }
+  return str.substring(0, idx);
 }
