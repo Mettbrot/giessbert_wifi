@@ -9,14 +9,13 @@
 class Logging
 {
 private:
-    Stream* _ser;
     unsigned long _time_offset;
     char _log[1<<10] = {0};
     std::uint16_t _p_log = 0;
     bool _print_date = true;
 
 public:
-    Logging(Stream* ser, const unsigned long time_offset);
+    Logging(const unsigned long time_offset);
     ~Logging();
     void setOffset(const unsigned long offset);
     const char* getLog() const;

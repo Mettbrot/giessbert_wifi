@@ -34,7 +34,7 @@ const int timezone = +1;
 // Initialize the Wifi client library
 WiFiClient api_client;
 
-Logging logger(&Serial, 0);
+Logging logger(0);
 
 
 // server address:
@@ -619,7 +619,6 @@ void httpRequest()
 {
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
-  //memset(api_response, 0, sizeof(api_response));
   api_client.stop();
 
   // if there's a successful connection:
