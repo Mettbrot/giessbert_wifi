@@ -32,7 +32,7 @@ const int timezone = +1;
 
 
 // Initialize the Wifi client library
-WiFiClient api_client;
+WiFiSSLClient api_client;
 
 Logging logger(0);
 
