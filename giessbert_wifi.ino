@@ -36,12 +36,10 @@ WiFiSSLClient api_client;
 
 Logging logger(0);
 
-
 // server address:
 char apiserver[] = "api.openweathermap.org";
 
-//StaticJsonDocument<26000> doc;
-char api_response[16000] = {0};
+char api_response[2000] = {0};
 
 //pump characteristics
 const double lps = 0.0326; //liter per second
@@ -78,7 +76,8 @@ unsigned long secs_today_in15mins = 0;
 unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
 unsigned long api_poweron_days = 0;
 
-bool api_parse_result = false;
+int api_parse_result = 0; //0 no header, 1 first values, 2 searching for forecast, 3. daily forecast
+
 unsigned long api_today_sunrise = 0;
 unsigned long api_today_sunset = 0;
 
@@ -254,30 +253,62 @@ void loop()
   if(wifi_status == WL_CONNECTED)
   {
     bool api_currentLineIsBlank = true;
-    int pos = 0;
-    bool first_read = true;
+    bool api_receive_after_header = false;
+    unsigned int api_receive_pos = 0;
+
     while (api_client.available())
     {
-      if(first_read)
-      {
-        //this is the first time, log event
-        logger.println("api_i");
-        first_read = false;
-      }
       char c = api_client.read();
       if(api_parse_result) //this char is the first after the empty newline
       {
-        if(pos >= sizeof(api_response))
+        api_response[api_receive_pos] = c;
+        
+        //fastest method:
+        if(api_parse_result == 1 || api_parse_result == 3)
+        {
+          ++api_receive_pos;
+        }
+        else
+        {
+          char comp[] = "\"daily\"";
+          if(api_response[api_receive_pos] == comp[api_receive_pos])
+          {
+            ++api_receive_pos;
+          }
+          else
+          {
+            api_receive_pos = 0;
+          }
+          
+          if(api_receive_pos == 7 && api_response[0] == comp[0] &&
+                                     api_response[1] == comp[1] &&
+                                     api_response[2] == comp[2] &&
+                                     api_response[3] == comp[3] &&
+                                     api_response[4] == comp[4] &&
+                                     api_response[5] == comp[5] &&
+                                     api_response[6] == comp[6])
+          {
+            
+            //this is the start of forecast data
+            logger.println("api_f");
+            api_parse_result = 3;
+          }
+        }
+        
+        //break if array is full
+        //-1: never write last byte (always null terminate)
+        if(api_receive_pos >= sizeof(api_response)-1)
         {
           break;
         }
-        api_response[pos] = c;
-        ++pos;
       }
   
       if (c == '\n' && api_currentLineIsBlank)
       {
-        api_parse_result = true; //this line is still \n 
+        api_parse_result = 1; //this line is still \n 
+        
+        //tstart of json data
+        logger.println("api_i");
       }
       if (c == '\n')
       {
@@ -290,12 +321,6 @@ void loop()
         api_currentLineIsBlank = false;
       }
     }
-    //terminate with null byte
-    if(pos >= sizeof(api_response))
-    {
-      pos = sizeof(api_response) - 1;
-    }
-    api_response[pos] = 0x0;
     
     if(api_parse_result)
     {
@@ -313,6 +338,7 @@ void loop()
       else
       {
         //api has been called recently, parse newest weather data
+        if(api_parse_result == 1)
         {
             //parse time offset:
             int r;
@@ -375,80 +401,85 @@ void loop()
             }
             api_today_sunrise = sunrise;
             api_today_sunset = atol(api_response+t[14].start);
+            
+            api_parse_result = 2;
         }
-        //second parsing round, starting at "daily" - get weather today & tomorrow
-        //parse weather forecast:
-        //search for "daily"
-        char* daily = std::strstr(api_response, "\"daily\"");
-        daily = std::strstr(daily, "{"); //go to next array start
-        if(daily)
+        else if(api_parse_result == 3)
         {
-          unsigned int offset = 0;
-          for(int i = 0; i < days_forecast; ++i)
+          //second parsing round, starting at "daily" - get weather today & tomorrow
+          //parse weather forecast:
+          //search for "daily"
+          char* daily = std::strstr(api_response, "\"daily\"");
+          daily = std::strstr(daily, "{"); //go to next array start
+          if(daily)
           {
-            if(strlen(daily) <= offset)
+            unsigned int offset = 0;
+            for(int i = 0; i < days_forecast; ++i)
             {
-              break;
-            }
-            int r;
-            jsmn_parser p;
-            jsmntok_t t[66];
-            
-            
-            jsmn_init(&p);
-            r = jsmn_parse(&p, daily+offset, strlen(daily+offset), t, sizeof(t)/sizeof(t[0]));
-
-            forecast[i].sunrise = atoi(daily+offset+t[4].start);
-            forecast[i].sunset = atoi(daily+offset+t[6].start);
-            
-            for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
-            {
-              //temp
-              if(t[j].type == 3 && t[j].end - t[j].start == 4)
-              {
-                //could be temp, do strcmp:
-                char test[5] = {0};
-                memcpy(test, daily+offset+t[j].start, 4);
-                if(strcmp(test, "temp") == 0)
-                {
-                  //this is temp, read daily value
-                  forecast[i].temp = atof(daily+offset+t[j+3].start);
-                }
-              }
-              //humidity
-              else if(t[j].type == 3 && t[j].end - t[j].start == 8)
-              {
-                //could be humidity, do strcmp:
-                char test[9] = {0};
-                memcpy(test, daily+offset+t[j].start, 8);
-                if(strcmp(test, "humidity") == 0)
-                {
-                  //this is temp, read daily value
-                  forecast[i].humidity = atof(daily+offset+t[j+1].start);
-                }
-              }
-              //clouds
-              else if(t[j].type == 3 && t[j].end - t[j].start == 6)
-              {
-                //could be clouds, do strcmp:
-                char test[7] = {0};
-                memcpy(test, daily+offset+t[j].start, 6);
-                if(strcmp(test, "clouds") == 0)
-                {
-                  //this is clouds, read daily value
-                  forecast[i].clouds = atoi(daily+offset+t[j+1].start);
-                }
-              }
-              //stop if we are past this day
-              if(t[j].start > t[0].end)
+              if(strlen(daily) <= offset)
               {
                 break;
               }
+              int r;
+              jsmn_parser p;
+              jsmntok_t t[66];
+              
+              
+              jsmn_init(&p);
+              r = jsmn_parse(&p, daily+offset, strlen(daily+offset), t, sizeof(t)/sizeof(t[0]));
+  
+              forecast[i].sunrise = atoi(daily+offset+t[4].start);
+              forecast[i].sunset = atoi(daily+offset+t[6].start);
+              
+              for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
+              {
+                //temp
+                if(t[j].type == 3 && t[j].end - t[j].start == 4)
+                {
+                  //could be temp, do strcmp:
+                  char test[5] = {0};
+                  memcpy(test, daily+offset+t[j].start, 4);
+                  if(strcmp(test, "temp") == 0)
+                  {
+                    //this is temp, read daily value
+                    forecast[i].temp = atof(daily+offset+t[j+3].start);
+                  }
+                }
+                //humidity
+                else if(t[j].type == 3 && t[j].end - t[j].start == 8)
+                {
+                  //could be humidity, do strcmp:
+                  char test[9] = {0};
+                  memcpy(test, daily+offset+t[j].start, 8);
+                  if(strcmp(test, "humidity") == 0)
+                  {
+                    //this is temp, read daily value
+                    forecast[i].humidity = atof(daily+offset+t[j+1].start);
+                  }
+                }
+                //clouds
+                else if(t[j].type == 3 && t[j].end - t[j].start == 6)
+                {
+                  //could be clouds, do strcmp:
+                  char test[7] = {0};
+                  memcpy(test, daily+offset+t[j].start, 6);
+                  if(strcmp(test, "clouds") == 0)
+                  {
+                    //this is clouds, read daily value
+                    forecast[i].clouds = atoi(daily+offset+t[j+1].start);
+                  }
+                }
+                //stop if we are past this day
+                if(t[j].start > t[0].end)
+                {
+                  break;
+                }
+              }
+              offset += t[0].end; //next read starts at next day object
             }
-            offset += t[0].end; //next read starts at next day object
           }
+          api_parse_result = 0;
         }
-        api_parse_result = false;
       }
     }
 
@@ -620,6 +651,8 @@ void httpRequest()
   // close any connection before send a new request.
   // This will free the socket on the WiFi shield
   api_client.stop();
+  //reset parsing state machine
+  api_parse_result = 0;
 
   // if there's a successful connection:
   if (api_client.connectSSL(apiserver, 443))
