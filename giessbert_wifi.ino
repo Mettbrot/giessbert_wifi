@@ -543,7 +543,11 @@ void loop()
               }
             }
           }
- 
+        }
+        else
+        {
+          logger.println("wc_f");
+          break;
         }
       }
       // close the connection:
@@ -558,6 +562,7 @@ void loop()
       // send out request to weather API
       api_lastCall_millis = millis();
       httpRequest();
+      delay(500); //this is ok here
     }
     
   }
@@ -578,7 +583,6 @@ void disableEnablePump()
   if(analog < water_threshold && waterAvailable == false)
   {
     logger.println("wt_t");
-    Serial.println(freeMemory());
     waterAvailable = true;
     //were we watering?
     if(currently_watering_plant_plus1)
