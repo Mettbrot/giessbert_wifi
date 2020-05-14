@@ -490,7 +490,8 @@ void loop()
     {
       logger.println("wc_c");
       // an http request ends with a blank line
-      String currentLine = "";
+      char curLine[200] = {0};
+      int posLine = 0;
       while (webserver_client.connected())
       {
         if (webserver_client.available())
@@ -500,7 +501,7 @@ void loop()
           {
             // if the current line is blank, you got two newline characters in a row.
             // that's the end of the client HTTP request, so send a response:
-            if (currentLine.length() == 0)
+            if (!posLine)
             {
               printWebPage(webserver_client);
               break;
@@ -508,43 +509,43 @@ void loop()
             else
             {
               // you're starting a new line
-              currentLine = "";
+              memset(curLine, 0, sizeof(curLine));
+              posLine = 0;
             }
           }
           else if (c != '\r')
           {
             // you've gotten a character on the current line
-            currentLine += c;
+            curLine[posLine] = c;
+            ++posLine;
             
             //check requests from the web here:
-            if (currentLine.startsWith("GET") && currentLine.endsWith("HTTP/1.1"))
+            if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
             {
               //we can analyze this:
-              int lights = currentLine.indexOf("lights=");
-              int water200 = currentLine.indexOf("water200=");
-              if(lights != -1)
+              char* lights = strstr(curLine, "lights=");
+              char* water200 = strstr(curLine, "water200=");
+              if(lights != NULL)
               {
-                String str = extractToNextDelimiter(currentLine.substring(lights+7));
-                if(str == "on")
+                if(charStartsWith(lights+7, "on"))
                 {
                   logger.println("m_lon");
                   digitalWrite(pins[idxLights], LOW);
                 }
-                else if(str == "off")
+                else if(charStartsWith(lights+7, "off"))
                 {
                   logger.println("m_loff");
                   digitalWrite(pins[idxLights], HIGH);
                 }
               }
-              if(water200 != -1)
+              if(water200 != NULL)
               {
-                String str = extractToNextDelimiter(currentLine.substring(water200+9));
               }
             }
           }
  
         }
-      }  
+      }
       // close the connection:
       webserver_client.stop();
       logger.println("wc_d");
@@ -567,7 +568,7 @@ void loop()
     disableEnablePump();
     water_lastRead_millis = millis();
   }
-    
+
 }
 
 void disableEnablePump()
@@ -577,6 +578,7 @@ void disableEnablePump()
   if(analog < water_threshold && waterAvailable == false)
   {
     logger.println("wt_t");
+    Serial.println(freeMemory());
     waterAvailable = true;
     //were we watering?
     if(currently_watering_plant_plus1)
@@ -711,30 +713,44 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
-String extractToNextDelimiter(String str)
+bool charStartsWith(const char* ch, const char* cmp)
 {
-  //cut off at & or blank whichever comes first
-  int idxand = str.indexOf("&");
-  int idxblank = str.indexOf(" ");
-  int idx = -1;
+  size_t ch_len = strlen(ch);
+  size_t cmp_len = strlen(cmp);
+  if(cmp_len > ch_len)
+  {
+    return false;
+  }
+  //cmp_len is smallest from here on
   
-  if(idxand != -1 && idxblank != -1)
+  for(int i = 0; i < cmp_len; ++i)
   {
-    idx = idxand < idxblank ? idxand : idxblank;
+    if(ch[i] != cmp[i])
+    {
+      return false;
+    }
   }
-  else if(idxand != -1) //idxblank is -1
+  return true;
+}
+
+bool charEndsWith(const char* ch, const char* cmp)
+{
+  size_t ch_len = strlen(ch);
+  size_t cmp_len = strlen(cmp);
+  if(cmp_len > ch_len)
   {
-    idx = idxand;
+    return false;
   }
-  else if(idxblank != -1) //idxand is -1
+  //cmp_len is smallest from here on
+  
+  for(int i = 0; i < cmp_len; ++i)
   {
-    idx = idxblank;
+    if(ch[ch_len-cmp_len+i] != cmp[i])
+    {
+      return false;
+    }
   }
-  else // both are -1
-  {
-    return str;
-  }
-  return str.substring(0, idx);
+  return true;
 }
 
 void printWebPage(WiFiClient& webserver_client)
