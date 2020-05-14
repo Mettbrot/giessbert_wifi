@@ -324,7 +324,6 @@ void loop()
     
     if(api_parse_result)
     {
-      logger.println("api_p");
       if (!api_client.connected())
       {
           Serial.println("disconnecting from server.");
@@ -340,72 +339,74 @@ void loop()
         //api has been called recently, parse newest weather data
         if(api_parse_result == 1)
         {
-            //parse time offset:
-            int r;
-            jsmn_parser p;
-            jsmntok_t t[56]; // this is enough for global data section
-          
-            jsmn_init(&p);
-            r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+          logger.println("api_p1");
+          //parse time offset:
+          int r;
+          jsmn_parser p;
+          jsmntok_t t[56]; // this is enough for global data section
         
-        
-            current_temp = atof(api_response+t[16].start);
-            current_humidity = atof(api_response+t[22].start);
-            current_clouds = atoi(api_response+t[28].start);
+          jsmn_init(&p);
+          r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
       
-            unsigned long sunrise = atol(api_response+t[12].start);
-            //roll over day on midnight and powerup:
-            if(api_today_sunrise != sunrise)
-            {
-              //roll over day here!
-              logger.println("nd");
-              
-              //sync internal clock:
-              //calculate difference since last sync:
-              unsigned long api_lastEpochOffset = api_epochOffset;
-              api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
-              //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
-              //we dont care though, if we are 15 minutes behind...
-              logger.setOffset(api_epochOffset);
-              logger.print("diff: ");
-              double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
-              logger.println(diff);
-
-              if(!api_lastEpochOffset)
-              {
-                //if api_offset was zero before this newday, this was poweron. Set to 0
-                api_poweron_days = 0;
-              }
-              else
-              {
-                ++api_poweron_days;
-              }
       
-              //we have our newday, set interval back to normal:
-              api_interval = 3600 * 1000;
-      
-              //reset daily water counter for all plants
-              for(int i = 0; i < maxPlants; ++i)
-              {
-                if(plants[i] == NULL)
-                {
-                  continue;
-                }
-                plants[i]->resetDailyWater();
-              }
-              state_watering_today = 0;
-              //turn off lights
-              digitalWrite(pins[idxLights], HIGH);
-              sunset_reached_today = false;
-              sunrise_reached_today = false;
-            }
-            api_today_sunrise = sunrise;
-            api_today_sunset = atol(api_response+t[14].start);
+          current_temp = atof(api_response+t[16].start);
+          current_humidity = atof(api_response+t[22].start);
+          current_clouds = atoi(api_response+t[28].start);
+    
+          unsigned long sunrise = atol(api_response+t[12].start);
+          //roll over day on midnight and powerup:
+          if(api_today_sunrise != sunrise)
+          {
+            //roll over day here!
+            logger.println("nd");
             
-            api_parse_result = 2;
+            //sync internal clock:
+            //calculate difference since last sync:
+            unsigned long api_lastEpochOffset = api_epochOffset;
+            api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+            //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
+            //we dont care though, if we are 15 minutes behind...
+            logger.setOffset(api_epochOffset);
+            logger.print("diff: ");
+            double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
+            logger.println(diff);
+
+            if(!api_lastEpochOffset)
+            {
+              //if api_offset was zero before this newday, this was poweron. Set to 0
+              api_poweron_days = 0;
+            }
+            else
+            {
+              ++api_poweron_days;
+            }
+    
+            //we have our newday, set interval back to normal:
+            api_interval = 3600 * 1000;
+    
+            //reset daily water counter for all plants
+            for(int i = 0; i < maxPlants; ++i)
+            {
+              if(plants[i] == NULL)
+              {
+                continue;
+              }
+              plants[i]->resetDailyWater();
+            }
+            state_watering_today = 0;
+            //turn off lights
+            digitalWrite(pins[idxLights], HIGH);
+            sunset_reached_today = false;
+            sunrise_reached_today = false;
+          }
+          api_today_sunrise = sunrise;
+          api_today_sunset = atol(api_response+t[14].start);
+          
+          api_parse_result = 2;
         }
         else if(api_parse_result == 3)
         {
+          logger.println("api_p3");
           //second parsing round, starting at "daily" - get weather today & tomorrow
           //parse weather forecast:
           //search for "daily"
