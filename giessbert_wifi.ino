@@ -15,11 +15,6 @@
 
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
-//#include "logging.h"
-//#include "plant.h"
-//#include "timecalc.h"
-
-//#include "jsmn.h"
 
 int wifi_status = WL_IDLE_STATUS;
 
@@ -31,7 +26,7 @@ WiFiSSLClient api_client;
 // server address:
 char apiserver[] = "www.google.com";
 
-char api_response[16000] = {0};
+char api_response[8000] = {0};
 
 
 unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
@@ -41,7 +36,7 @@ unsigned long secs_today_in15mins = 0;
 unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
 unsigned long api_poweron_days = 0;
 
-bool api_parse_result = false;
+int api_parse_result = 0;
 
 WiFiServer webserver(80);
 bool wifi_noConnection = false;
@@ -69,8 +64,6 @@ void loop()
     wifi_noConnection = true;
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
-    //set hostname
-    WiFi.setHostname("arduino");
     // Connect to WPA/WPA2 network.
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -96,10 +89,11 @@ void loop()
       if(first_read)
       {
         //this is the first time, log event
-        Serial.println("api_i");
+        Serial.println("api incomming");
         first_read = false;
       }
       char c = api_client.read();
+      Serial.print(c);
       if(api_parse_result) //this char is the first after the empty newline
       {
         if(pos >= sizeof(api_response))
@@ -112,7 +106,7 @@ void loop()
   
       if (c == '\n' && api_currentLineIsBlank)
       {
-        api_parse_result = true; //this line is still \n 
+        api_parse_result = 1; //this line is still \n 
       }
       if (c == '\n')
       {
@@ -134,22 +128,24 @@ void loop()
     
     if(api_parse_result)
     {
-      Serial.println("api_p");
-      if (!api_client.connected())
-      {
-          Serial.println("disconnecting from server.");
-          api_client.stop();
-      }
-      //parse
-      api_parse_result = false;
+      Serial.print("api parse turn ");
+      Serial.println(api_parse_result);
+      //parse here
+      ++api_parse_result;
     }
 
+    if(api_parse_result && !api_client.available())
+    {
+      Serial.println("disconnecting from server");
+      api_client.stop();
+      api_parse_result = 0;
+    }
     
     // listen for incoming clients
     WiFiClient webserver_client = webserver.available();
     if (webserver_client)
     {
-      Serial.println("wc_c");
+      Serial.println("client connected");
       // an http request ends with a blank line
       bool currentLineBlank = true;
       while (webserver_client.connected())
@@ -197,13 +193,13 @@ void loop()
       }  
       // close the connection:
       webserver_client.stop();
-      Serial.println("wc_d");
+      Serial.println("client disconnected");
     }
     
 
     if(api_lastConnectionTime  < (double)millis() - (double)api_interval)
     {
-      Serial.println("api_r");
+      Serial.println("api requesting");
       // send out request to weather API
       api_lastCall_millis = millis();
       httpRequest();
