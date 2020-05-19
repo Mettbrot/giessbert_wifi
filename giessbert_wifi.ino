@@ -26,7 +26,6 @@ int wifi_status = WL_IDLE_STATUS;
 
 #define DIGITAL_CHANNELS 8
 #define SUNSET_LIGHTS true
-#define DST true
 
 const int timezone = +1;
 
@@ -70,6 +69,7 @@ unsigned long current_watering_start_millis = 0;
 bool got_plant_characteristics = false;
 
 unsigned long api_epochOffset = 0;
+unsigned long api_timezoneOffset = 0;
 unsigned long api_lastCall_millis = 0;
 unsigned long secs_today_in15mins = 0;
 unsigned long api_interval = 30L * 1000L; // try every 30 seconds at first
@@ -241,12 +241,12 @@ void loop()
   }
   
   //15 minutes before the day is over (on our timing) we shorten the api calling interval to get an accurate reading on the time
-  if(elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true))+75000 < secs_today_in15mins) //this is true if its midnight in 15 minutes
+  if(elapsedSecsToday(now()+api_timezoneOffset+15*60)+75000 < secs_today_in15mins) //this is true if its midnight in 15 minutes
   {
     api_interval = 60*1000; // every minute
   }
   //save secs today in 15 minutes:
-  secs_today_in15mins = elapsedSecsToday(correctTimezoneDST(now()+15*60, 1, true));
+  secs_today_in15mins = elapsedSecsToday(now()+api_timezoneOffset+15*60);
 
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
@@ -346,13 +346,13 @@ void loop()
         
           jsmn_init(&p);
           r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
-      
-      
-          current_temp = atof(api_response+t[16].start);
-          current_humidity = atof(api_response+t[22].start);
-          current_clouds = atoi(api_response+t[28].start);
+
+          current_temp = atof(api_response+t[18].start);
+          current_humidity = atof(api_response+t[24].start);
+          current_clouds = atoi(api_response+t[30].start);
+          api_timezoneOffset = atoi(api_response+t[8].start);
     
-          unsigned long sunrise = atol(api_response+t[12].start);
+          unsigned long sunrise = atol(api_response+t[14].start);
           //roll over day on midnight and powerup:
           if(api_today_sunrise != sunrise)
           {
@@ -362,10 +362,9 @@ void loop()
             //sync internal clock:
             //calculate difference since last sync:
             unsigned long api_lastEpochOffset = api_epochOffset;
-            api_epochOffset = atol(api_response+t[10].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+            api_epochOffset = atol(api_response+t[12].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
             //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
             //we dont care though, if we are 15 minutes behind...
-            logger.setOffset(api_epochOffset);
             logger.print("diff: ");
             double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
             logger.println(diff);
@@ -381,7 +380,7 @@ void loop()
             }
     
             //we have our newday, set interval back to normal:
-            api_interval = 3600 * 1000;
+            //api_interval = 3600 * 1000;
     
             //reset daily water counter for all plants
             for(int i = 0; i < maxPlants; ++i)
@@ -398,8 +397,9 @@ void loop()
             sunset_reached_today = false;
             sunrise_reached_today = false;
           }
+          logger.setOffset(api_epochOffset+api_timezoneOffset);
           api_today_sunrise = sunrise;
-          api_today_sunset = atol(api_response+t[14].start);
+          api_today_sunset = atol(api_response+t[16].start);
           
           api_parse_result = 2;
         }
@@ -497,6 +497,7 @@ void loop()
         if (webserver_client.available())
         {
           char c = webserver_client.read();
+          Serial.write(c);
           if (c == '\n')
           {
             // if the current line is blank, you got two newline characters in a row.
@@ -518,31 +519,33 @@ void loop()
             // you've gotten a character on the current line
             curLine[posLine] = c;
             ++posLine;
+            
+            //check requests from the web here:
+            if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
+            {
+              //we can analyze this:
+              char* lights = strstr(curLine, "lights=");
+              char* water200 = strstr(curLine, "water200=");
+              if(lights != NULL)
+              {
+                if(charStartsWith(lights+7, "on"))
+                {
+                  logger.println("m_lon");
+                  digitalWrite(pins[idxLights], LOW);
+                }
+                else if(charStartsWith(lights+7, "off"))
+                {
+                  logger.println("m_loff");
+                  digitalWrite(pins[idxLights], HIGH);
+                }
+              }
+              if(water200 != NULL)
+              {
+              }
+            }
           }
           
-          //check requests from the web here:
-          if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
-          {
-            //we can analyze this:
-            char* lights = strstr(curLine, "lights=");
-            char* water200 = strstr(curLine, "water200=");
-            if(lights != NULL)
-            {
-              if(charStartsWith(lights+7, "on"))
-              {
-                logger.println("m_lon");
-                digitalWrite(pins[idxLights], LOW);
-              }
-              else if(charStartsWith(lights+7, "off"))
-              {
-                logger.println("m_loff");
-                digitalWrite(pins[idxLights], HIGH);
-              }
-            }
-            if(water200 != NULL)
-            {
-            }
-          }
+  
         }
         else
         {
@@ -777,7 +780,7 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.print("<td>Last Weather Update</td><td>");
     {
       char date[25] = {0};
-      formattedDate(date, offsetMillis(api_lastCall_millis), 1, true);
+      formattedDate(date, offsetMillis(api_lastCall_millis)+api_timezoneOffset);
       webserver_client.print(date);
     }
     webserver_client.println("</td>");
@@ -792,13 +795,13 @@ void printWebPage(WiFiClient& webserver_client)
     if(api_poweron_days && state_watering_today == 0)
     {
       char date[25] = {0};
-      formattedDate(date, api_today_sunrise+watering_sunrise_offset, 1, true);
+      formattedDate(date, api_today_sunrise+api_timezoneOffset+watering_sunrise_offset);
       webserver_client.print(date);
     }
     else if(api_poweron_days && state_watering_today == 1)
     {
       char date[25] = {0};
-      formattedDate(date, api_today_sunset+watering_sunset_offset, 1, true);
+      formattedDate(date, api_today_sunset+api_timezoneOffset+watering_sunset_offset);
       webserver_client.print(date);
     }
     else
@@ -902,6 +905,7 @@ void printWebPage(WiFiClient& webserver_client)
     */
     webserver_client.println("</form>");
     webserver_client.println("</html>");
+    webserver_client.println();
     /*
   // output the value of each analog input pin
   for (int analogChannel = 0; analogChannel < 6; analogChannel++)

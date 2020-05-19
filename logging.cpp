@@ -49,7 +49,7 @@ size_t Logging::print(const char* str)
         char date[25] = {0};
         if(_time_offset)
         {
-            formattedDate(date, _time_offset+(millis()/1000.0), 1, true);
+            formattedDate(date, _time_offset+(millis()/1000.0));
         }
         else
         {
