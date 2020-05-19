@@ -69,7 +69,6 @@ unsigned long current_watering_start_millis = 0;
 
 bool got_plant_characteristics = false;
 
-unsigned long api_lastConnectionTime = 0; //TODO           // last time you connected to the server, in milliseconds
 unsigned long api_epochOffset = 0;
 unsigned long api_lastCall_millis = 0;
 unsigned long secs_today_in15mins = 0;
@@ -519,29 +518,29 @@ void loop()
             // you've gotten a character on the current line
             curLine[posLine] = c;
             ++posLine;
-            
-            //check requests from the web here:
-            if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
+          }
+          
+          //check requests from the web here:
+          if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
+          {
+            //we can analyze this:
+            char* lights = strstr(curLine, "lights=");
+            char* water200 = strstr(curLine, "water200=");
+            if(lights != NULL)
             {
-              //we can analyze this:
-              char* lights = strstr(curLine, "lights=");
-              char* water200 = strstr(curLine, "water200=");
-              if(lights != NULL)
+              if(charStartsWith(lights+7, "on"))
               {
-                if(charStartsWith(lights+7, "on"))
-                {
-                  logger.println("m_lon");
-                  digitalWrite(pins[idxLights], LOW);
-                }
-                else if(charStartsWith(lights+7, "off"))
-                {
-                  logger.println("m_loff");
-                  digitalWrite(pins[idxLights], HIGH);
-                }
+                logger.println("m_lon");
+                digitalWrite(pins[idxLights], LOW);
               }
-              if(water200 != NULL)
+              else if(charStartsWith(lights+7, "off"))
               {
+                logger.println("m_loff");
+                digitalWrite(pins[idxLights], HIGH);
               }
+            }
+            if(water200 != NULL)
+            {
             }
           }
         }
@@ -557,7 +556,7 @@ void loop()
     }
     
 
-    if(got_plant_characteristics && (api_lastConnectionTime  < (double)millis() - (double)api_interval))
+    if(got_plant_characteristics && (api_lastCall_millis  < (double)millis() - (double)api_interval))
     {
       logger.println("api_r");
       // send out request to weather API
@@ -688,14 +687,12 @@ void httpRequest()
     api_client.println("User-Agent: ArduinoWiFi/1.1");
     api_client.println("Connection: close");
     api_client.println();
-
-    // note the time that the connection was made:
-    api_lastConnectionTime = millis();
   }
   else
   {
     // if you couldn't make a connection:
     Serial.println("connection failed");
+    //lower calling time //TODO
   }
 }
 
