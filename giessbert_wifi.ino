@@ -14,6 +14,7 @@
 #include <WiFiNINA.h>
 
 #include <cstring>
+#include <cstdio>
 
 #include "settings.h" // char[] arrays: ssid, pass, apiKey, lat, lon
 #include "logging.h"
@@ -41,12 +42,14 @@ char apiserver[] = "api.openweathermap.org";
 char api_response[2000] = {0};
 
 //pump characteristics
-const double lps = 0.0326; //liter per second
+const double lps = 0.0078947; //liter per second with long small tube and valve diameter and 50cm height
+const double lps_small = 0.0326; //liter per second with only small diameter
 const double lps_large = 0.0517; //liter per second with only larger diameter
 
 const int maxPlants = DIGITAL_CHANNELS-2;
 
 Plant* plants[maxPlants] = {NULL};
+int plants_water_manually[maxPlants] = {0};
 
 //mapping table
 int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
@@ -62,7 +65,7 @@ volatile bool waterAvailable = false;
 bool sunset_reached_today = true; //disable lights until we have the first API call
 bool sunrise_reached_today = true;
 
-int state_watering_today = 0; //0 not watered //1 watered once //2 ... 
+int state_watering_today = 0; //0 not watered //1 watering first time //2 watering first finished //3 watering second time // 4 watering second finished //-1 watering manually
 int currently_watering_plant_plus1 = 0;
 unsigned long current_watering_start_millis = 0;
 
@@ -80,7 +83,7 @@ int api_parse_result = 0; //0 no header, 1 first values, 2 searching for forecas
 unsigned long api_today_sunrise = 0;
 unsigned long api_today_sunset = 0;
 
-int watering_sunrise_offset = 6*3600;
+int watering_sunrise_offset = 0;
 int watering_sunset_offset = 0;
 
 //MAX 7
@@ -166,21 +169,47 @@ void loop()
     webserver.begin();
   }
 
-  //check if we can water
-  if(waterAvailable && api_epochOffset && api_poweron_days)
+  //calc if we need to water manually
+  int manual_active = 0;
+  for(int i = 0; i < maxPlants; ++i)
   {
-    //check if we need to water
-    if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
+    if(plants[i] == NULL)
     {
-      //start watering
+      continue;
+    }
+    manual_active += plants_water_manually[i];
+  }
+
+  //check if we can water
+  if(waterAvailable)
+  {
+    //check if we water manually
+    if(manual_active)
+    {
+      state_watering_today = -1;
+    }
+    else if(api_epochOffset && api_poweron_days)
+    {
+      //check if we need to water
+      if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
+      {
+        //switch to 1 to start watering
+        state_watering_today = 1;
+      }
+      else if(state_watering_today == 2 && offsetMillis() > api_today_sunset+watering_sunset_offset)
+      {
+        //switch to 3 to start watering
+        state_watering_today = 3;
+      }
+      //TODO even more states???
+    }
+
+    //this makes watering independant from starting conditions
+    if(state_watering_today%2) //uneven states means we are watering
+    {
+      //check if we are done / switch plants
       selectCurrentPlantToWater();
     }
-    else if(state_watering_today == 1 && offsetMillis() > api_today_sunset+watering_sunset_offset)
-    {
-      //same as before
-      selectCurrentPlantToWater();
-    }
-    //TODO even more states???
   }
 
   //check if we are done watering for now
@@ -203,6 +232,7 @@ void loop()
       digitalWrite(pins[idxPlantOffset+i], HIGH);
     }
   }
+
 
   //watering variables were set, turn on valves and pump
   if(waterAvailable && currently_watering_plant_plus1)
@@ -230,8 +260,7 @@ void loop()
     //for safety on every loop
     digitalWrite(pins[idxPump], HIGH);
   }
-          
-
+  
   //if its sunset turn on the lights:
   if(SUNSET_LIGHTS && !sunset_reached_today && now() > api_today_sunset)
   {
@@ -247,6 +276,17 @@ void loop()
   }
   //save secs today in 15 minutes:
   secs_today_in15mins = elapsedSecsToday(now()+api_timezoneOffset+15*60);
+
+
+  if(got_plant_characteristics && (api_lastCall_millis  < (double)millis() - (double)api_interval))
+  {
+    logger.println("api_r");
+    // send out request to weather API
+    api_lastCall_millis = millis();
+    httpRequest();
+    delay(500); //this is ok here
+  }
+
 
   // everything after here is useless without wifi
   if(wifi_status == WL_CONNECTED)
@@ -298,7 +338,153 @@ void loop()
         //-1: never write last byte (always null terminate)
         if(api_receive_pos >= sizeof(api_response)-1)
         {
-          break;
+          //parse here:
+          if(api_parse_result == 1)
+          {
+            logger.println("api_p1");
+            //parse time offset:
+            int r;
+            jsmn_parser p;
+            jsmntok_t t[56]; // this is enough for global data section
+          
+            jsmn_init(&p);
+            r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
+  
+            current_temp = atof(api_response+t[18].start);
+            current_humidity = atof(api_response+t[24].start);
+            current_clouds = atoi(api_response+t[30].start);
+            api_timezoneOffset = atoi(api_response+t[8].start);
+      
+            unsigned long sunrise = atol(api_response+t[14].start);
+            //roll over day on midnight and powerup:
+            if(api_today_sunrise != sunrise)
+            {
+              //roll over day here!
+              logger.println("nd");
+              
+              //sync internal clock:
+              //calculate difference since last sync:
+              unsigned long api_lastEpochOffset = api_epochOffset;
+              api_epochOffset = atol(api_response+t[12].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
+              //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
+              //we dont care though, if we are 15 minutes behind...
+              logger.print("diff: ");
+              double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
+              logger.println(diff);
+  
+              if(!api_lastEpochOffset)
+              {
+                //if api_offset was zero before this newday, this was poweron. Set to 0
+                api_poweron_days = 0;
+              }
+              else
+              {
+                ++api_poweron_days;
+              }
+      
+              //we have our newday, set interval back to normal:
+              api_interval = 3600 * 1000;
+      
+              //reset daily water counter for all plants
+              for(int i = 0; i < maxPlants; ++i)
+              {
+                if(plants[i] == NULL)
+                {
+                  continue;
+                }
+                plants[i]->resetDailyWater();
+              }
+              state_watering_today = 0;
+              //turn off lights
+              digitalWrite(pins[idxLights], HIGH);
+              sunset_reached_today = false;
+              sunrise_reached_today = false;
+            }
+            logger.setOffset(api_epochOffset+api_timezoneOffset);
+            api_today_sunrise = sunrise;
+            api_today_sunset = atol(api_response+t[16].start);
+            
+            api_receive_pos = 0;
+            api_parse_result = 2;
+          }
+          else if(api_parse_result == 3)
+          {
+            logger.println("api_p3");
+            //second parsing round, starting at "daily" - get weather today & tomorrow
+            //parse weather forecast:
+            //search for "daily"
+            char* daily = std::strstr(api_response, "\"daily\"");
+            daily = std::strstr(daily, "{"); //go to next array start
+            if(daily)
+            {
+              unsigned int offset = 0;
+              for(int i = 0; i < days_forecast; ++i)
+              {
+                if(strlen(daily) <= offset)
+                {
+                  break;
+                }
+                int r;
+                jsmn_parser p;
+                jsmntok_t t[66];
+                
+                
+                jsmn_init(&p);
+                r = jsmn_parse(&p, daily+offset, strlen(daily+offset), t, sizeof(t)/sizeof(t[0]));
+    
+                forecast[i].sunrise = atoi(daily+offset+t[4].start);
+                forecast[i].sunset = atoi(daily+offset+t[6].start);
+                
+                for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
+                {
+                  //temp
+                  if(t[j].type == 3 && t[j].end - t[j].start == 4)
+                  {
+                    //could be temp, do strcmp:
+                    char test[5] = {0};
+                    memcpy(test, daily+offset+t[j].start, 4);
+                    if(strcmp(test, "temp") == 0)
+                    {
+                      //this is temp, read daily value
+                      forecast[i].temp = atof(daily+offset+t[j+3].start);
+                    }
+                  }
+                  //humidity
+                  else if(t[j].type == 3 && t[j].end - t[j].start == 8)
+                  {
+                    //could be humidity, do strcmp:
+                    char test[9] = {0};
+                    memcpy(test, daily+offset+t[j].start, 8);
+                    if(strcmp(test, "humidity") == 0)
+                    {
+                      //this is temp, read daily value
+                      forecast[i].humidity = atof(daily+offset+t[j+1].start);
+                    }
+                  }
+                  //clouds
+                  else if(t[j].type == 3 && t[j].end - t[j].start == 6)
+                  {
+                    //could be clouds, do strcmp:
+                    char test[7] = {0};
+                    memcpy(test, daily+offset+t[j].start, 6);
+                    if(strcmp(test, "clouds") == 0)
+                    {
+                      //this is clouds, read daily value
+                      forecast[i].clouds = atoi(daily+offset+t[j+1].start);
+                    }
+                  }
+                  //stop if we are past this day
+                  if(t[j].start > t[0].end)
+                  {
+                    break;
+                  }
+                }
+                offset += t[0].end; //next read starts at next day object
+              }
+            }
+            api_parse_result = 0;
+          }
+          
         }
       }
   
@@ -320,170 +506,7 @@ void loop()
         api_currentLineIsBlank = false;
       }
     }
-    
-    if(api_parse_result)
-    {
-      if (!api_client.connected())
-      {
-          Serial.println("disconnecting from server.");
-          api_client.stop();
-      }
-      if(!got_plant_characteristics)
-      {
-        //this is the characteristics call, parse differently:
-        got_plant_characteristics = true;
-      }
-      else
-      {
-        //api has been called recently, parse newest weather data
-        if(api_parse_result == 1)
-        {
-          logger.println("api_p1");
-          //parse time offset:
-          int r;
-          jsmn_parser p;
-          jsmntok_t t[56]; // this is enough for global data section
-        
-          jsmn_init(&p);
-          r = jsmn_parse(&p, api_response, strlen(api_response), t, sizeof(t)/sizeof(t[0]));
 
-          current_temp = atof(api_response+t[18].start);
-          current_humidity = atof(api_response+t[24].start);
-          current_clouds = atoi(api_response+t[30].start);
-          api_timezoneOffset = atoi(api_response+t[8].start);
-    
-          unsigned long sunrise = atol(api_response+t[14].start);
-          //roll over day on midnight and powerup:
-          if(api_today_sunrise != sunrise)
-          {
-            //roll over day here!
-            logger.println("nd");
-            
-            //sync internal clock:
-            //calculate difference since last sync:
-            unsigned long api_lastEpochOffset = api_epochOffset;
-            api_epochOffset = atol(api_response+t[12].start) - (unsigned long)((double) api_lastCall_millis / 1000.0);
-            //offset calculation is biased, because we get timestamp from last measurement TODO: what is the frequency of updates? ~15 minutes
-            //we dont care though, if we are 15 minutes behind...
-            logger.print("diff: ");
-            double diff = (double)api_epochOffset - (double)api_lastEpochOffset;
-            logger.println(diff);
-
-            if(!api_lastEpochOffset)
-            {
-              //if api_offset was zero before this newday, this was poweron. Set to 0
-              api_poweron_days = 0;
-            }
-            else
-            {
-              ++api_poweron_days;
-            }
-    
-            //we have our newday, set interval back to normal:
-            //api_interval = 3600 * 1000;
-    
-            //reset daily water counter for all plants
-            for(int i = 0; i < maxPlants; ++i)
-            {
-              if(plants[i] == NULL)
-              {
-                continue;
-              }
-              plants[i]->resetDailyWater();
-            }
-            state_watering_today = 0;
-            //turn off lights
-            digitalWrite(pins[idxLights], HIGH);
-            sunset_reached_today = false;
-            sunrise_reached_today = false;
-          }
-          logger.setOffset(api_epochOffset+api_timezoneOffset);
-          api_today_sunrise = sunrise;
-          api_today_sunset = atol(api_response+t[16].start);
-          
-          api_parse_result = 2;
-        }
-        else if(api_parse_result == 3)
-        {
-          logger.println("api_p3");
-          //second parsing round, starting at "daily" - get weather today & tomorrow
-          //parse weather forecast:
-          //search for "daily"
-          char* daily = std::strstr(api_response, "\"daily\"");
-          daily = std::strstr(daily, "{"); //go to next array start
-          if(daily)
-          {
-            unsigned int offset = 0;
-            for(int i = 0; i < days_forecast; ++i)
-            {
-              if(strlen(daily) <= offset)
-              {
-                break;
-              }
-              int r;
-              jsmn_parser p;
-              jsmntok_t t[66];
-              
-              
-              jsmn_init(&p);
-              r = jsmn_parse(&p, daily+offset, strlen(daily+offset), t, sizeof(t)/sizeof(t[0]));
-  
-              forecast[i].sunrise = atoi(daily+offset+t[4].start);
-              forecast[i].sunset = atoi(daily+offset+t[6].start);
-              
-              for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
-              {
-                //temp
-                if(t[j].type == 3 && t[j].end - t[j].start == 4)
-                {
-                  //could be temp, do strcmp:
-                  char test[5] = {0};
-                  memcpy(test, daily+offset+t[j].start, 4);
-                  if(strcmp(test, "temp") == 0)
-                  {
-                    //this is temp, read daily value
-                    forecast[i].temp = atof(daily+offset+t[j+3].start);
-                  }
-                }
-                //humidity
-                else if(t[j].type == 3 && t[j].end - t[j].start == 8)
-                {
-                  //could be humidity, do strcmp:
-                  char test[9] = {0};
-                  memcpy(test, daily+offset+t[j].start, 8);
-                  if(strcmp(test, "humidity") == 0)
-                  {
-                    //this is temp, read daily value
-                    forecast[i].humidity = atof(daily+offset+t[j+1].start);
-                  }
-                }
-                //clouds
-                else if(t[j].type == 3 && t[j].end - t[j].start == 6)
-                {
-                  //could be clouds, do strcmp:
-                  char test[7] = {0};
-                  memcpy(test, daily+offset+t[j].start, 6);
-                  if(strcmp(test, "clouds") == 0)
-                  {
-                    //this is clouds, read daily value
-                    forecast[i].clouds = atoi(daily+offset+t[j+1].start);
-                  }
-                }
-                //stop if we are past this day
-                if(t[j].start > t[0].end)
-                {
-                  break;
-                }
-              }
-              offset += t[0].end; //next read starts at next day object
-            }
-          }
-          api_parse_result = 0;
-        }
-      }
-    }
-
-    
     // listen for incoming clients
     WiFiClient webserver_client = webserver.available();
     if (webserver_client)
@@ -525,7 +548,6 @@ void loop()
             {
               //we can analyze this:
               char* lights = strstr(curLine, "lights=");
-              char* water200 = strstr(curLine, "water200=");
               if(lights != NULL)
               {
                 if(charStartsWith(lights+7, "on"))
@@ -539,13 +561,25 @@ void loop()
                   digitalWrite(pins[idxLights], HIGH);
                 }
               }
-              if(water200 != NULL)
+              //find water for each possible plant:
+              for(int i = 0; i < maxPlants; ++i)
               {
+                if(plants[i] == NULL)
+                {
+                  continue;
+                }
+                char waterstr[10] = "water"; //10 is enough for "water999=" plus null termination
+                int waterlen = std::sprintf(waterstr, "water%i=", i);
+                char* water = strstr(curLine, waterstr);
+                if(water != NULL)
+                {
+                  int amount = atoi(water+waterlen);
+                  plants_water_manually[i] += amount;
+                }
               }
+
             }
           }
-          
-  
         }
         else
         {
@@ -559,14 +593,6 @@ void loop()
     }
     
 
-    if(got_plant_characteristics && (api_lastCall_millis  < (double)millis() - (double)api_interval))
-    {
-      logger.println("api_r");
-      // send out request to weather API
-      api_lastCall_millis = millis();
-      httpRequest();
-      delay(500); //this is ok here
-    }
     
   }
   
@@ -598,8 +624,8 @@ void disableEnablePump()
   {
     logger.println("wt_f");
     waterAvailable = false;
-    //also stop pump right away!
-    //digitalWrite(pins[idxPump], HIGH);
+    //also stop pump right away! TODO
+    //digitalWrite(pins[idxPump], HIGH); 
     //were we watering?
     if(currently_watering_plant_plus1)
     {
@@ -609,6 +635,15 @@ void disableEnablePump()
       
       double watered = (millis() - current_watering_start_millis) * lps; //in ml
       plants[currently_watering_plant_plus1-1]->addWater(watered);
+      //substract value from manual watering
+      if(state_watering_today == -1)
+      {
+        plants_water_manually[currently_watering_plant_plus1-1] -= (int) watered;
+        if(plants_water_manually[currently_watering_plant_plus1-1] < 0)
+        {
+          plants_water_manually[currently_watering_plant_plus1-1] = 0;
+        }
+      }
     }
   }
 }
@@ -616,18 +651,43 @@ void disableEnablePump()
 void selectCurrentPlantToWater()
 {
   double watered = (millis() - current_watering_start_millis) * lps; //in ml
+  double water_compare;
+  if(!currently_watering_plant_plus1)
+  {
+    water_compare = 0; //doesnt matter
+  }
+  else if(state_watering_today == -1)
+  {
+    //we are watering manually
+    water_compare = plants_water_manually[currently_watering_plant_plus1-1];
+  }
+  else
+  {
+    //we are watering on schedule
+    water_compare = plants[currently_watering_plant_plus1-1]->calcWaterAmout(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise);
+  }
   //if this is our first plant, OR if the current plant's watering is done, switch to the next one
-  if(!currently_watering_plant_plus1 || watered >= plants[currently_watering_plant_plus1-1]->calcWaterAmout(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise))
+  if(!currently_watering_plant_plus1 || watered >= water_compare)
   {
     if(currently_watering_plant_plus1)
     {
       //save water amount to plant:
       plants[currently_watering_plant_plus1-1]->addWater(watered);
+      //optionally clear manual counter:
+      if(state_watering_today == -1)
+      {
+        plants_water_manually[currently_watering_plant_plus1-1] = 0;
+      }
     }
     //next plant
     for(int i = currently_watering_plant_plus1; i <= maxPlants; ++i) //allow to go to maxPlants to detect state after last plant
     {
-      if(plants[i] == NULL)
+      if(i == maxPlants)
+      {
+        currently_watering_plant_plus1 = i+1;
+        break;
+      }
+      if(plants[i] == NULL || (state_watering_today == -1 && !plants_water_manually[i]))
       {
         continue;
       }            
@@ -798,7 +858,7 @@ void printWebPage(WiFiClient& webserver_client)
       formattedDate(date, api_today_sunrise+api_timezoneOffset+watering_sunrise_offset);
       webserver_client.print(date);
     }
-    else if(api_poweron_days && state_watering_today == 1)
+    else if(api_poweron_days && state_watering_today == 2)
     {
       char date[25] = {0};
       formattedDate(date, api_today_sunset+api_timezoneOffset+watering_sunset_offset);
@@ -882,9 +942,16 @@ void printWebPage(WiFiClient& webserver_client)
       webserver_client.print(plants[i]->getDailyWater());
       webserver_client.print("</td><td>");
       webserver_client.print(plants[i]->getTotalWater());
-      webserver_client.print("</td><td><button type=\"submit\" name=\"water200\" value=\"");
+      webserver_client.print("</td><td><button type=\"submit\" name=\"water");
       webserver_client.print(i);
-      webserver_client.println("\">Water 200ml</button></td>");
+      webserver_client.print("\" value=\"");
+      webserver_client.print(100);
+      webserver_client.print("\"");
+      if(!waterAvailable)
+      {
+        webserver_client.print(" disabled=\"disabled\"");
+      }
+      webserver_client.println(">Water 100ml</button></td>");
       webserver_client.println("</tr>");
     }
     webserver_client.println("</table>");
