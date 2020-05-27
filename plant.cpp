@@ -51,7 +51,7 @@ unsigned long Plant::getDailyWater() const
 
 unsigned long Plant::getTotalWater() const
 {
-  return _daily_amount_ml;
+  return _total_amount_ml;
 }
 
 
