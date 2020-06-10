@@ -10,8 +10,8 @@
 */
 
 
-#include <SPI.h>
-#include <WiFiNINA.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h> 
 
 #include <cstring>
 #include <cstdio>
@@ -32,12 +32,13 @@ const int timezone = +1;
 
 
 // Initialize the Wifi client library
-WiFiSSLClient api_client;
+WiFiClientSecure api_client;
 
 Logging logger(0);
 
 // server address:
 char apiserver[] = "api.openweathermap.org";
+const char apiserver_fingerprint[] PROGMEM = "EE AA 58 6D 4F 1F 42 F4 18 5B 7F B0 F2 0A 4C DD 97 47 7D 99";
 
 char api_response[2000] = {0};
 
@@ -52,8 +53,8 @@ Plant* plants[maxPlants] = {NULL};
 int plants_water_manually[maxPlants] = {0};
 
 //mapping table
-int pins[DIGITAL_CHANNELS] = {5, 4, 3, 2, 1, 0, A6, A5};
-const int pinWaterSensor = A1;
+int pins[DIGITAL_CHANNELS] = {D0, D1, D2, D3, D4, D5, D6, D7};
+const int pinWaterSensor = A0;
 const int idxLights = 0;
 const int idxPump = 1;
 const int idxPlantOffset = 2;
@@ -154,7 +155,8 @@ void loop()
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
     //set hostname
-    WiFi.setHostname("giessbert");
+    WiFi.mode(WIFI_STA);        //Only Station No AP, This line hides the viewing of ESP as wifi hotspot
+    //WiFi.setHostname("giessbert");
     // Connect to WPA/WPA2 network.
     wifi_status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -515,9 +517,9 @@ void loop()
       // an http request ends with a blank line
       char curLine[200] = {0};
       int posLine = 0;
-      while (webserver_client.connected())
+      if (webserver_client.connected())
       {
-        if (webserver_client.available())
+        while (webserver_client.available())
         {
           char c = webserver_client.read();
           Serial.write(c);
@@ -581,12 +583,13 @@ void loop()
             }
           }
         }
-        else
-        {
-          logger.println("wc_f");
-          break;
-        }
       }
+      else
+      {
+        logger.println("wc_f");
+      }
+      // give the web browser time to receive the data
+      delay(1);
       // close the connection:
       webserver_client.stop();
       logger.println("wc_d");
@@ -723,8 +726,11 @@ void httpRequest()
   //reset parsing state machine
   api_parse_result = 0;
 
+  api_client.setFingerprint(apiserver_fingerprint);
+  api_client.setTimeout(10000);
+
   // if there's a successful connection:
-  if (api_client.connectSSL(apiserver, 443))
+  if (api_client.connect(apiserver, 443))
   {
     Serial.println("connecting...");
     // send the HTTP PUT request:
