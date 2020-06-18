@@ -110,21 +110,31 @@ bool wifi_noConnection = false;
 unsigned long wifi_lastTry_millis = 0;
 unsigned long water_lastRead_millis = 0;
 
+const unsigned int session_id_length = 6;
+const unsigned int session_id_amount = 10;
+struct session_id
+{
+  unsigned long expiration;
+  char id[session_id_length+1]; //always null terminated
+};
+
+
+struct session_id web_sessions[session_id_amount] = {0};
 
 void setup()
 {
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
-  //while (!Serial)
-  {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
 
   //setup plants statically for now TODO
   got_plant_characteristics = true;
-  plants[1] = new Plant("Cherrytomate 1", 200, 1300, 1500);
-  plants[3] = new Plant("Rispentomate 1", 300, 1700, 1500);
-  plants[4] = new Plant("Kumquats", 300, 1800, 2500);
+  plants[0] = new Plant("Clematis", 50, 500, 100);
+  plants[1] = new Plant("4 Tomaten", 80*4, 1200*4, 700*4);
+  plants[2] = new Plant("Gurke", 80, 1000, 800);
+  //plants[3] = new Plant("Kumquats", 300, 2000, 2500); //alle 3 Tage
+  plants[3] = new Plant("Kumquats", 80, 1200, 2000);
+  plants[4] = new Plant("Gladiolen", 100, 1200, 1500);
+  plants[5] = new Plant("6 Kräuter", 30*6, 250*6, 1200);
  
   pinMode(pinWaterSensor, INPUT_PULLUP);
   //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
@@ -152,8 +162,6 @@ void loop()
   while (wifi_status != WL_CONNECTED && (!wifi_lastTry_millis || wifi_lastTry_millis + 10000 < millis()))
   {
     wifi_noConnection = true;
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(ssid);
     //set hostname
     WiFi.mode(WIFI_STA);        //Only Station No AP, This line hides the viewing of ESP as wifi hotspot
     //WiFi.setHostname("giessbert");
@@ -522,7 +530,6 @@ void loop()
         while (webserver_client.available())
         {
           char c = webserver_client.read();
-          Serial.write(c);
           if (c == '\n')
           {
             // if the current line is blank, you got two newline characters in a row.
@@ -548,38 +555,63 @@ void loop()
             //check requests from the web here:
             if (charStartsWith(curLine, "GET") && charEndsWith(curLine, "HTTP/1.1"))
             {
-              //we can analyze this:
-              char* lights = strstr(curLine, "lights=");
-              if(lights != NULL)
+              //lets find out session id first:
+              bool session_valid = false;
+              char* session = strstr(curLine, "session_id=");
+              if(session != NULL)
               {
-                if(charStartsWith(lights+7, "on"))
+                for(int i = 0; i < session_id_amount; ++i)
                 {
-                  logger.println("m_lon");
-                  digitalWrite(pins[idxLights], LOW);
-                }
-                else if(charStartsWith(lights+7, "off"))
-                {
-                  logger.println("m_loff");
-                  digitalWrite(pins[idxLights], HIGH);
+                  if(web_sessions[i].expiration < millis())
+                  {
+                     web_sessions[i].expiration = 0;
+                     memset(web_sessions[i].id, 0, session_id_length);
+                  }
+                  else
+                  {
+                    //this might be our session, check:
+                    if(charStartsWith(session+11, web_sessions[i].id))
+                    {
+                      //valid and not expired, yeey
+                      session_valid = true;
+                    }
+                  }
                 }
               }
-              //find water for each possible plant:
-              for(int i = 0; i < maxPlants; ++i)
+              if(session_valid)
               {
-                if(plants[i] == NULL)
+                //we can analyze this:
+                char* lights = strstr(curLine, "lights=");
+                if(lights != NULL)
                 {
-                  continue;
+                  if(charStartsWith(lights+7, "on"))
+                  {
+                    logger.println("m_lon");
+                    digitalWrite(pins[idxLights], LOW);
+                  }
+                  else if(charStartsWith(lights+7, "off"))
+                  {
+                    logger.println("m_loff");
+                    digitalWrite(pins[idxLights], HIGH);
+                  }
                 }
-                char waterstr[10] = "water"; //10 is enough for "water999=" plus null termination
-                int waterlen = std::sprintf(waterstr, "water%i=", i);
-                char* water = strstr(curLine, waterstr);
-                if(water != NULL)
+                //find water for each possible plant:
+                for(int i = 0; i < maxPlants; ++i)
                 {
-                  int amount = atoi(water+waterlen);
-                  plants_water_manually[i] += amount;
+                  if(plants[i] == NULL)
+                  {
+                    continue;
+                  }
+                  char waterstr[10] = "water"; //10 is enough for "water999=" plus null termination
+                  int waterlen = std::sprintf(waterstr, "water%i=", i);
+                  char* water = strstr(curLine, waterstr);
+                  if(water != NULL)
+                  {
+                    int amount = atoi(water+waterlen);
+                    plants_water_manually[i] += amount;
+                  }
                 }
               }
-
             }
           }
         }
@@ -717,6 +749,18 @@ unsigned long now()
   return offsetMillis();
 }
 
+
+void generate_session_id(char *s)
+{
+    static const char hex[] = "0123456789abcdef";
+
+    for (int i = 0; i < session_id_length; ++i)
+    {
+        s[i] = hex[(rand() * millis()) % (sizeof(hex) - 1)];
+    }
+}
+
+
 // this method makes a HTTP connection to the server:
 void httpRequest()
 {
@@ -732,7 +776,6 @@ void httpRequest()
   // if there's a successful connection:
   if (api_client.connect(apiserver, 443))
   {
-    Serial.println("connecting...");
     // send the HTTP PUT request:
     char adr[120] = {0};
     strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
@@ -760,7 +803,7 @@ void httpRequest()
   else
   {
     // if you couldn't make a connection:
-    Serial.println("connection failed");
+    logger.println("api_f");
     //lower calling time //TODO
   }
 }
@@ -826,6 +869,27 @@ bool charEndsWith(const char* ch, const char* cmp)
 
 void printWebPage(WiFiClient& webserver_client)
 {
+    int last_free_session = -1;
+    char* current_session_id = NULL;
+    //remove timed out sessions
+    for(int i = 0; i < session_id_amount; ++i)
+    {
+      //TODO: this is dumb in case of an overflow of millis (do we run 50 days?)
+        if(web_sessions[i].expiration < millis())
+        {
+             web_sessions[i].expiration = 0;
+             memset(web_sessions[i].id, 0, session_id_length);
+             last_free_session = i;
+        }
+    }
+    //generate new session id for this session
+    if(last_free_session >= 0)
+    {
+        web_sessions[last_free_session].expiration = millis() + 60*1000;
+        generate_session_id(web_sessions[last_free_session].id);
+        current_session_id = web_sessions[last_free_session].id;
+    }
+    
     // send a standard http response header
     webserver_client.println("HTTP/1.1 200 OK");
     webserver_client.println("Content-Type: text/html");
@@ -837,9 +901,20 @@ void printWebPage(WiFiClient& webserver_client)
     webserver_client.println("<head>");
     webserver_client.println("<meta charset=\"utf-8\">");
     webserver_client.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+    //favicon
+    webserver_client.print("<link id=\"favicon\" rel=\"shortcut icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml,%3C%3Fxml version='1.0' encoding='iso-8859-1'%3F%3E%3Csvg version='1.1' id='Capa_1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' viewBox='0 0 512 512' style='enable-background:new 0 0 512 512;' xml:space='preserve'%3E%3Cpath style='fill:%233FB57A;' d='M194.951,214.456l-81.655-68.517c-1.527-1.281-3.498-1.905-5.486-1.73 c-1.985,0.173-3.82,1.129-5.101,2.656l-41.786,49.798c-2.266,2.7-2.351,6.614-0.202,9.409l105.001,136.638 c1.443,1.879,3.659,2.937,5.959,2.937c0.618,0,1.242-0.077,1.86-0.234c2.912-0.743,5.101-3.151,5.565-6.12l18.44-117.918 C197.952,218.773,196.968,216.148,194.951,214.456z'/%3E%3Cpath style='fill:%235D5B72;' d='M355.393,336.442H227.645c-4.15,0-7.515-3.365-7.515-7.515v-162.75 c0-60.577,49.282-109.86,109.86-109.86h58.492C456.591,56.318,512,111.727,512,179.835C512,266.188,441.746,336.442,355.393,336.442 z M235.16,321.413h120.232c78.067,0,141.579-6");
+    webserver_client.print("3.512,141.579-141.579c0-59.821-48.667-108.488-108.488-108.488H329.99 c-52.289,0-94.831,42.54-94.831,94.831L235.16,321.413L235.16,321.413z'/%3E%3Cpath style='fill:%23B4CCCB;' d='M115.432,148.877l-17.303-42.755c-3.354-8.287-10.628-14.068-19.458-15.464 c-8.83-1.398-17.534,1.859-23.28,8.708L5.928,158.313c-5.746,6.848-7.44,15.984-4.533,24.438 c2.908,8.453,9.864,14.613,18.608,16.478l45.109,9.616c0.522,0.111,1.046,0.165,1.567,0.165c2.194,0,4.311-0.963,5.756-2.684 l41.786-49.798C116.009,154.397,116.475,151.455,115.432,148.877z'/%3E%3Cg%3E%3Cpath style='fill:%23434259;' d='M68.791,137.3c-0.481,0-0.982-0.05-1.463-0.15c-0.481-0.09-0.952-0.24-1.403-0.431 c-0.461-0.18-0.892-0.411-1.303-0.681c-0.411-0.281-0.792-0.591-1.142-0.942c-0.351-0.341-0.661-0.731-0.932-1.142 c-0.271-0.401-0.501-0.842-0.691-1.292c-0.19-0.461-0.331-0.932-0.431-1.413s-0.15-0.972-0.15-1.463 c0-1.984,0.802-3.918,2.204-5.31c0.351-0.351,0.731-0.661,1.142-0.942c0.411-0.271,0.842-0.501,1.303-0.691 c0.451-0.18,0.922-0.331,1.403-0.421c0");
+    webserver_client.print(".972-0.2,1.964-0.2,2.936,0c0.481,0.09,0.952,0.24,1.403,0.421 c0.461,0.19,0.892,0.421,1.303,0.691c0.411,0.281,0.792,0.591,1.142,0.942c0.341,0.341,0.661,0.731,0.932,1.142 c0.271,0.401,0.501,0.842,0.691,1.293c0.19,0.451,0.331,0.922,0.431,1.403c0.09,0.491,0.14,0.982,0.14,1.473 c0,0.491-0.05,0.982-0.14,1.463c-0.1,0.481-0.24,0.952-0.431,1.413c-0.19,0.451-0.421,0.892-0.691,1.292 c-0.271,0.411-0.591,0.802-0.932,1.142C72.709,136.498,70.775,137.3,68.791,137.3z'/%3E%3Cpath style='fill:%23434259;' d='M53.502,155.525c-0.491,0-0.982-0.05-1.463-0.15c-0.481-0.09-0.952-0.24-1.413-0.431 c-0.451-0.18-0.882-0.421-1.293-0.691c-0.411-0.271-0.802-0.581-1.142-0.932c-0.351-0.351-0.661-0.731-0.932-1.142 s-0.511-0.842-0.691-1.292c-0.19-0.461-0.341-0.932-0.431-1.413c-0.1-0.481-0.15-0.972-0.15-1.463s0.05-0.982,0.15-1.473 c0.09-0.481,0.24-0.952,0.431-1.403c0.18-0.451,0.421-0.892,0.691-1.303s0.581-0.792,0.932-1.142 c0.341-0.341,0.731-0.661,1.142-0.932c0.411-0.271,0.842-0.501,1.293-0.691c0.461-0.19,0.932-0.331,1.413-");
+    webserver_client.print("0.431 c0.962-0.19,1.964-0.19,2.936,0c0.481,0.1,0.952,0.24,1.403,0.431c0.451,0.19,0.892,0.421,1.303,0.691 c0.411,0.271,0.792,0.591,1.142,0.932c0.341,0.351,0.651,0.731,0.932,1.142c0.271,0.411,0.501,0.852,0.691,1.303 c0.18,0.451,0.331,0.922,0.431,1.403c0.09,0.491,0.14,0.982,0.14,1.473s-0.05,0.982-0.14,1.463c-0.1,0.481-0.25,0.952-0.431,1.413 c-0.19,0.451-0.421,0.882-0.691,1.292c-0.281,0.411-0.591,0.792-0.932,1.142C57.419,154.723,55.486,155.525,53.502,155.525z'/%3E%3Cpath style='fill:%23434259;' d='M38.212,173.74c-0.491,0-0.982-0.04-1.463-0.14c-0.481-0.1-0.962-0.24-1.413-0.431 c-0.451-0.19-0.892-0.421-1.293-0.691c-0.411-0.271-0.802-0.591-1.142-0.932c-0.351-0.351-0.661-0.731-0.932-1.142 c-0.271-0.411-0.511-0.842-0.691-1.303c-0.19-0.451-0.341-0.922-0.431-1.403c-0.1-0.481-0.15-0.982-0.15-1.463 c0-0.491,0.05-0.992,0.15-1.473c0.09-0.481,0.24-0.952,0.431-1.403c0.18-0.461,0.421-0.892,0.691-1.303 c0.271-0.411,0.581-0.792,0.932-1.142c0.341-0.341,0.731-0.661,1.142-0.932c0.401-0.271,0.842-0.501,1.293-");
+    webserver_client.print("0.691 c0.451-0.19,0.932-0.331,1.413-0.431c0.962-0.19,1.964-0.19,2.936,0c0.471,0.1,0.952,0.24,1.403,0.431 c0.451,0.19,0.892,0.421,1.293,0.691c0.421,0.271,0.802,0.591,1.152,0.932c0.341,0.351,0.651,0.731,0.932,1.142 c0.271,0.411,0.501,0.842,0.691,1.303c0.18,0.451,0.331,0.922,0.421,1.403c0.1,0.481,0.15,0.982,0.15,1.473 c0,0.481-0.05,0.982-0.15,1.463c-0.09,0.481-0.24,0.952-0.421,1.403c-0.19,0.461-0.421,0.892-0.691,1.303 c-0.281,0.411-0.591,0.792-0.932,1.142c-0.351,0.341-0.731,0.661-1.152,0.932c-0.401,0.271-0.842,0.501-1.293,0.691 c-0.451,0.19-0.932,0.331-1.403,0.431C39.194,173.7,38.703,173.74,38.212,173.74z'/%3E%3C/g%3E%3Cpath style='fill:%2354D195;' d='M442.447,455.682H174.12c-10.938,0-19.294-9.764-17.604-20.571l41.918-268.066 c1.357-8.673,8.826-15.065,17.604-15.065h184.489c8.778,0,16.248,6.392,17.604,15.065l41.918,268.066 C461.742,445.918,453.385,455.682,442.447,455.682z'/%3E%3Cpath style='fill:%233FB57A;' d='M460.052,435.112l-41.918-268.066c-1.357-8.673-8.826-15.065-17.604-15.065h-19.177");
+    webserver_client.print(" c6.953,0,12.87,6.393,13.945,15.065l33.204,268.066c1.339,10.807-5.28,20.571-13.944,20.571h27.892 C453.385,455.682,461.742,445.918,460.052,435.112z'/%3E%3Cpath style='fill:%23434259;' d='M302.427,413.618c-4.151,0-7.515-3.365-7.515-7.515v-42.296c0-4.15,3.364-7.515,7.515-7.515 c4.151,0,7.515,3.365,7.515,7.515v42.296C309.942,410.253,306.578,413.618,302.427,413.618z'/%3E%3Cpath style='fill:%23E1EEF7;' d='M348.386,303.655c-1.444-0.834-2.947-1.458-4.476-1.923c1.529-0.465,3.033-1.09,4.476-1.923 c10.194-5.885,13.687-18.921,7.801-29.114c-5.885-10.194-18.921-13.687-29.114-7.801c-1.444,0.834-2.736,1.823-3.904,2.915 c0.362-1.557,0.572-3.171,0.572-4.838c0-11.771-9.542-21.313-21.313-21.313c-11.771,0-21.313,9.542-21.313,21.313 c0,1.667,0.21,3.281,0.573,4.838c-1.167-1.092-2.46-2.082-3.904-2.915c-10.194-5.885-23.229-2.393-29.114,7.801 c-5.885,10.194-2.393,23.229,7.801,29.114c1.444,0.834,2.947,1.458,4.477,1.923c-1.529,0.465-3.033,1.09-4.477,1.923 c-10.194,5.885-13.687,18.921-7.801,29.114c5.885,10.194,18.");
+    webserver_client.println(" 921,13.687,29.114,7.801c1.444-0.834,2.736-1.824,3.904-2.915 c-0.362,1.557-0.573,3.171-0.573,4.838c0,11.771,9.542,21.313,21.313,21.313c11.771,0,21.313-9.542,21.313-21.313 c0-1.667-0.21-3.281-0.572-4.838c1.167,1.092,2.46,2.082,3.904,2.915c10.194,5.885,23.229,2.393,29.114-7.801 S358.58,309.54,348.386,303.655z'/%3E%3Ccircle style='fill:%23F4BD7A;' cx='302.426' cy='301.734' r='17.592'/%3E%3C/svg%3E\" />");
     webserver_client.println("</head>");
     webserver_client.println("<h1>Gießbert 4.0</h1>");
     webserver_client.println("<form method=\"get\" action=\"\">");
+    webserver_client.print("<input type=\"hidden\" name=\"session_id\" value=\"");
+    webserver_client.print(current_session_id);
+    webserver_client.println("\" />");
     webserver_client.println("");
     webserver_client.println("<table style=\"border:0px\">");
     webserver_client.println("<tr>");
