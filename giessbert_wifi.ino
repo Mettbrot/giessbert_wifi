@@ -686,23 +686,24 @@ void disableEnablePump()
 void selectCurrentPlantToWater()
 {
   double watered = (millis() - current_watering_start_millis) * lps; //in ml
-  double water_compare;
+  bool current_plant_watering_done = false;
   if(!currently_watering_plant_plus1)
   {
-    water_compare = 0; //doesnt matter
+    current_plant_watering_done = true; //so we switch to first plant
   }
   else if(state_watering_today == -1)
   {
-    //we are watering manually
-    water_compare = plants_water_manually[currently_watering_plant_plus1-1];
+    //we are watering manually, compare to what we watered this session:
+    current_plant_watering_done = (watered >= plants_water_manually[currently_watering_plant_plus1-1]);
   }
   else
   {
-    //we are watering on schedule
-    water_compare = plants[currently_watering_plant_plus1-1]->calcWaterAmout(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise);
+    double water_compare = plants[currently_watering_plant_plus1-1]->calcWaterAmount(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise);
+    //we are watering on schedule, compare to total plus this session
+    current_plant_watering_done = ((plants[currently_watering_plant_plus1-1]->getDailyWater() + watered) >= water_compare);
   }
   //if this is our first plant, OR if the current plant's watering is done, switch to the next one
-  if(!currently_watering_plant_plus1 || watered >= water_compare)
+  if(current_plant_watering_done)
   {
     if(currently_watering_plant_plus1)
     {

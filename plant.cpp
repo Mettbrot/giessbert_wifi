@@ -24,7 +24,7 @@ unsigned long Plant::getDailyMax() const
   return _daily_amount_max_ml;
 }
 
-unsigned long Plant::calcWaterAmout(double temp, double humidity, int clouds, unsigned long secs_p_day) const
+unsigned long Plant::calcWaterAmount(double temp, double humidity, int clouds, unsigned long secs_p_day) const
 {
   //can be called several times a day, calc watering amout today, minus water given today limited by pot size
   //main loop needs to call all plants in the evening if they had enough for today and water again if not TODO
