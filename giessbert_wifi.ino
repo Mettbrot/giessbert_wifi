@@ -42,12 +42,13 @@ const char apiserver_fingerprint[] PROGMEM = "EE AA 58 6D 4F 1F 42 F4 18 5B 7F B
 
 char api_response[2000] = {0};
 
+const int maxPlants = DIGITAL_CHANNELS-2;
+
 //pump characteristics
 const double lps = 0.0078947; //liter per second with long small tube and valve diameter and 50cm height
 const double lps_small = 0.0326; //liter per second with only small diameter
 const double lps_large = 0.0517; //liter per second with only larger diameter
-
-const int maxPlants = DIGITAL_CHANNELS-2;
+double lps_array[maxPlants] = {0}; //measured liter per second with actual pipe length and perforation
 
 Plant* plants[maxPlants] = {NULL};
 int plants_water_manually[maxPlants] = {0};
@@ -129,12 +130,18 @@ void setup()
   //setup plants statically for now TODO
   got_plant_characteristics = true;
   plants[0] = new Plant("Clematis", 50, 500, 100);
+  lps_array[0] = lps * 927.0 / 1000.0;
   plants[1] = new Plant("4 Tomaten", 80*4, 1200*4, 700*4);
+  lps_array[1] = lps * 923.0 / 1000.0;
   plants[2] = new Plant("Gurke", 80, 1000, 800);
+  lps_array[2] = lps * 925.0 / 1000.0;
   //plants[3] = new Plant("Kumquats", 300, 2000, 2500); //alle 3 Tage
   plants[3] = new Plant("Kumquats", 80, 1200, 2000);
+  lps_array[3] = lps * 944.0 / 1000.0;
   plants[4] = new Plant("Gladiolen", 100, 1200, 1500);
+  lps_array[4] = lps * 1179.0 / 1000.0;
   plants[5] = new Plant("6 Kräuter", 30*6, 250*6, 1200);
+  lps_array[5] = lps * 830.0 / 1000.0;
  
   pinMode(pinWaterSensor, INPUT_PULLUP);
   //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
@@ -668,7 +675,7 @@ void disableEnablePump()
       digitalWrite(pins[idxPlantOffset+currently_watering_plant_plus1-1], HIGH);
       //and save already watered amount:
       
-      double watered = (millis() - current_watering_start_millis) * lps; //in ml
+      double watered = (millis() - current_watering_start_millis) * lps_array[currently_watering_plant_plus1-1]; //in ml
       plants[currently_watering_plant_plus1-1]->addWater(watered);
       //substract value from manual watering
       if(state_watering_today == -1)
@@ -685,7 +692,7 @@ void disableEnablePump()
 
 void selectCurrentPlantToWater()
 {
-  double watered = (millis() - current_watering_start_millis) * lps; //in ml
+  double watered = 0;
   bool current_plant_watering_done = false;
   if(!currently_watering_plant_plus1)
   {
@@ -693,11 +700,13 @@ void selectCurrentPlantToWater()
   }
   else if(state_watering_today == -1)
   {
+    watered = (millis() - current_watering_start_millis) * lps_array[currently_watering_plant_plus1-1]; //in ml
     //we are watering manually, compare to what we watered this session:
     current_plant_watering_done = (watered >= plants_water_manually[currently_watering_plant_plus1-1]);
   }
   else
   {
+    watered = (millis() - current_watering_start_millis) * lps_array[currently_watering_plant_plus1-1]; //in ml
     double water_compare = plants[currently_watering_plant_plus1-1]->calcWaterAmount(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise);
     //we are watering on schedule, compare to total plus this session
     current_plant_watering_done = ((plants[currently_watering_plant_plus1-1]->getDailyWater() + watered) >= water_compare);
