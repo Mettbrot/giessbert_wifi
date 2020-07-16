@@ -129,18 +129,18 @@ void setup()
 
   //setup plants statically for now TODO
   got_plant_characteristics = true;
-  plants[0] = new Plant("Clematis", 50, 500, 100);
+  plants[0] = new Plant("Clematis", 50, 500, 300);
   lps_array[0] = lps * 927.0 / 1000.0;
-  plants[1] = new Plant("4 Tomaten", 80*4, 1200*4, 700*4);
+  plants[1] = new Plant("4 Tomaten", 80*4, 1200*4, 600*4);
   lps_array[1] = lps * 923.0 / 1000.0;
-  plants[2] = new Plant("Gurke", 80, 1000, 800);
+  plants[2] = new Plant("Gurke", 80, 1000, 700);
   lps_array[2] = lps * 925.0 / 1000.0;
   //plants[3] = new Plant("Kumquats", 300, 2000, 2500); //alle 3 Tage
-  plants[3] = new Plant("Kumquats", 80, 1200, 2000);
+  plants[3] = new Plant("Kumquats", 80, 1200, 1000);
   lps_array[3] = lps * 944.0 / 1000.0;
-  plants[4] = new Plant("Gladiolen", 100, 1200, 1500);
+  plants[4] = new Plant("Gladiolen", 100, 1200, 900);
   lps_array[4] = lps * 1179.0 / 1000.0;
-  plants[5] = new Plant("6 Kräuter", 30*6, 250*6, 1200);
+  plants[5] = new Plant("6 Kräuter", 30*6, 250*6, 1000);
   lps_array[5] = lps * 830.0 / 1000.0;
  
   pinMode(pinWaterSensor, INPUT_PULLUP);
