@@ -207,18 +207,22 @@ void loop()
     }
     else if(api_epochOffset && api_poweron_days)
     {
-      //check if we need to water
-      if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
+      if(state_watering_today >= 0 && state_watering_today%2 == 0)
       {
-        //switch to 1 to start watering
-        state_watering_today = 1;
+        //check if we need to water check latest state first
+        if(offsetMillis() > api_today_sunset+watering_sunset_offset)
+        {
+          //switch to 3 to start watering
+          state_watering_today = 3;
+        }
+        else if(offsetMillis() > api_today_sunrise+watering_sunrise_offset)
+        {
+          //switch to 1 to start watering
+          state_watering_today = 1;
+        }
+        //TODO even more states???
       }
-      else if(state_watering_today == 2 && offsetMillis() > api_today_sunset+watering_sunset_offset)
-      {
-        //switch to 3 to start watering
-        state_watering_today = 3;
-      }
-      //TODO even more states???
+      //do nothing on -1 and other uneven states (we are watering, let it run through)
     }
 
     //this makes watering independant from starting conditions
@@ -709,7 +713,7 @@ void selectCurrentPlantToWater()
     watered = (millis() - current_watering_start_millis) * lps_array[currently_watering_plant_plus1-1]; //in ml
     double water_compare = plants[currently_watering_plant_plus1-1]->calcWaterAmount(forecast[0].temp, forecast[0].humidity, forecast[0].clouds, api_today_sunset - api_today_sunrise);
     //we are watering on schedule, compare to total plus this session
-    current_plant_watering_done = ((plants[currently_watering_plant_plus1-1]->getDailyWater() + watered) >= water_compare);
+    current_plant_watering_done = (watered >= water_compare);
   }
   //if this is our first plant, OR if the current plant's watering is done, switch to the next one
   if(current_plant_watering_done)
