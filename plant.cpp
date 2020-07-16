@@ -27,9 +27,15 @@ unsigned long Plant::getDailyMax() const
 unsigned long Plant::calcWaterAmount(double temp, double humidity, int clouds, unsigned long secs_p_day) const
 {
   //can be called several times a day, calc watering amout today, minus water given today limited by pot size
-  //main loop needs to call all plants in the evening if they had enough for today and water again if not TODO
-  //main loop keeps track of timing since only one plant is watered at a time. ~ millis() - currentplant_started_millis * 1000 * mlps < calcWateramount
-  unsigned long ret = dailyWaterTotal(temp, humidity, clouds, secs_p_day) - _daily_amount_ml;
+  //main loop needs to call all plants in the evening if they had enough for today and water again if not
+  //main loop keeps track of timing since only one plant is watered at a time. ~ (millis() - currentplant_started_millis) * 1000 * mlps < calcWateramount
+  unsigned long daily = dailyWaterTotal(temp, humidity, clouds, secs_p_day);
+  if(daily < _daily_amount_ml)
+  {
+    //dont water anymore
+    return 0;
+  }
+  unsigned long ret = daily - _daily_amount_ml;
   if(ret > _max_per_watering)
   {
     ret = _max_per_watering;
