@@ -536,9 +536,9 @@ void loop()
       // an http request ends with a blank line
       char curLine[200] = {0};
       int posLine = 0;
-      if (webserver_client.connected())
+      while (webserver_client.connected())
       {
-        while (webserver_client.available())
+        if (webserver_client.available())
         {
           char c = webserver_client.read();
           if (c == '\n')
@@ -626,10 +626,6 @@ void loop()
             }
           }
         }
-      }
-      else
-      {
-        logger.println("wc_f");
       }
       // give the web browser time to receive the data
       delay(1);
