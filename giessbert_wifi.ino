@@ -210,12 +210,12 @@ void loop()
       if(state_watering_today >= 0 && state_watering_today%2 == 0)
       {
         //check if we need to water check latest state first
-        if(offsetMillis() > api_today_sunset+watering_sunset_offset)
+        if(state_watering_today == 2 && offsetMillis() > api_today_sunset+watering_sunset_offset)
         {
           //switch to 3 to start watering
           state_watering_today = 3;
         }
-        else if(offsetMillis() > api_today_sunrise+watering_sunrise_offset)
+        else if(state_watering_today == 0 && offsetMillis() > api_today_sunrise+watering_sunrise_offset)
         {
           //switch to 1 to start watering
           state_watering_today = 1;
