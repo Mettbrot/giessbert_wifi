@@ -5,7 +5,10 @@
 
 Plant::Plant(const char* plantname, const unsigned long mlmin, const unsigned long mlmax, const unsigned long mlmaxpot) : _name(plantname), _daily_amount_min_ml(mlmin), _daily_amount_max_ml(mlmax), _max_per_watering(mlmaxpot)
 {
-    
+    if(_daily_amount_min_ml > _daily_amount_max_ml)
+    {
+      _daily_amount_min_ml = _daily_amount_max_ml;
+    }
 }
 
 
