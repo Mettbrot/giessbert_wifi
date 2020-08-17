@@ -459,14 +459,14 @@ void loop()
                 for(int j = 0; j < sizeof(t)/sizeof(t[0]); ++j)
                 {
                   //temp
-                  if(t[j].type == 3 && t[j].end - t[j].start == 4)
+                  if(t[j].type == 3 && t[j].end - t[j].start == 3)
                   {
-                    //could be temp, do strcmp:
+                    //could be max[temp], do strcmp:
                     char test[5] = {0};
                     memcpy(test, daily+offset+t[j].start, 4);
-                    if(strcmp(test, "temp") == 0)
+                    if(strcmp(test, "max") == 0)
                     {
-                      //this is temp, read daily value
+                      //this is max[temp], read daily value
                       forecast[i].temp = atof(daily+offset+t[j+3].start);
                     }
                   }
@@ -788,8 +788,8 @@ void httpRequest()
   {
     // send the HTTP PUT request:
     char adr[120] = {0};
-    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&lat=");
-    int pos = strlen("GET /data/2.5/onecall?units=metric&lat=");
+    strcpy(adr+0, "GET /data/2.5/onecall?units=metric&exclude=minutely,hourly&lat=");
+    int pos = strlen("GET /data/2.5/onecall?units=metric&exclude=minutely,hourly&lat=");
     strcpy(adr+pos, lat);
     pos += strlen(lat);
     strcpy(adr+pos, "&lon=");
