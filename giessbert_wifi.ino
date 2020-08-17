@@ -136,9 +136,9 @@ void setup()
   plants[2] = new Plant("Gurke", 80, 1000, 700);
   lps_array[2] = lps * 925.0 / 1000.0;
   //plants[3] = new Plant("Kumquats", 300, 2000, 2500); //alle 3 Tage
-  plants[3] = new Plant("Kumquats", 80, 1200, 1000);
+  plants[3] = new Plant("Kumquats", 70, 1000, 1000);
   lps_array[3] = lps * 944.0 / 1000.0;
-  plants[4] = new Plant("Gladiolen", 100, 1200, 900);
+  //plants[4] = new Plant("Gladiolen", 100, 1200, 900);
   lps_array[4] = lps * 1179.0 / 1000.0;
   plants[5] = new Plant("6 Kräuter", 30*6, 250*6, 1000);
   lps_array[5] = lps * 830.0 / 1000.0;
