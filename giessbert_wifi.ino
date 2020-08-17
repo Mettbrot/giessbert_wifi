@@ -787,7 +787,7 @@ void httpRequest()
   if (api_client.connect(apiserver, 443))
   {
     // send the HTTP PUT request:
-    char adr[120] = {0};
+    char adr[144] = {0};
     strcpy(adr+0, "GET /data/2.5/onecall?units=metric&exclude=minutely,hourly&lat=");
     int pos = strlen("GET /data/2.5/onecall?units=metric&exclude=minutely,hourly&lat=");
     strcpy(adr+pos, lat);
