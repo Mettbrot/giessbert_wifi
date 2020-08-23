@@ -318,46 +318,32 @@ void loop()
 
     while (api_client.available())
     {
+      bool found_daily = false;
       char c = api_client.read();
       if(api_parse_result) //this char is the first after the empty newline
       {
         api_response[api_receive_pos] = c;
-        
-        //fastest method:
-        if(api_parse_result == 1 || api_parse_result == 3)
-        {
-          ++api_receive_pos;
+
+        //check if the last 7 digits where "daily"
+        char comp[] = "\"daily\"";
+        if(api_receive_pos >= 6 && api_response[api_receive_pos-6] == comp[0] &&
+                                   api_response[api_receive_pos-5] == comp[1] &&
+                                   api_response[api_receive_pos-4] == comp[2] &&
+                                   api_response[api_receive_pos-3] == comp[3] &&
+                                   api_response[api_receive_pos-2] == comp[4] &&
+                                   api_response[api_receive_pos-1] == comp[5] &&
+                                   api_response[api_receive_pos] == comp[6])
+        {      
+          //this was the start of forecast data, skip to the next round to read it
+          api_receive_pos = sizeof(api_response); //this will trigger the parse condition
+          found_daily = true;
+          logger.println("api_f");
         }
-        else
-        {
-          char comp[] = "\"daily\"";
-          if(api_response[api_receive_pos] == comp[api_receive_pos])
-          {
-            ++api_receive_pos;
-          }
-          else
-          {
-            api_receive_pos = 0;
-          }
-          
-          if(api_receive_pos == 7 && api_response[0] == comp[0] &&
-                                     api_response[1] == comp[1] &&
-                                     api_response[2] == comp[2] &&
-                                     api_response[3] == comp[3] &&
-                                     api_response[4] == comp[4] &&
-                                     api_response[5] == comp[5] &&
-                                     api_response[6] == comp[6])
-          {
-            
-            //this is the start of forecast data
-            logger.println("api_f");
-            api_parse_result = 3;
-          }
-        }
+        ++api_receive_pos;
         
-        //break if array is full
+        //break if array is full or we are out of data
         //-1: never write last byte (always null terminate)
-        if(api_receive_pos >= sizeof(api_response)-1)
+        if(api_receive_pos >= sizeof(api_response)-1 || !api_client.available())
         {
           //parse here:
           if(api_parse_result == 1)
@@ -427,15 +413,24 @@ void loop()
             
             api_receive_pos = 0;
             api_parse_result = 2;
+            if(found_daily)
+            {
+              //jump to 3 directly
+              api_parse_result = 3;
+            }
+          }
+          else if(api_parse_result == 2 && found_daily)
+          {
+            api_receive_pos = 0;
+            api_parse_result = 3;
           }
           else if(api_parse_result == 3)
           {
             logger.println("api_p3");
-            //second parsing round, starting at "daily" - get weather today & tomorrow
+            //second parsing round, starting after "daily" - get weather today & tomorrow
             //parse weather forecast:
-            //search for "daily"
-            char* daily = std::strstr(api_response, "\"daily\"");
-            daily = std::strstr(daily, "{"); //go to next array start
+            //no need to search for "daily", we are exactly behind it
+            char* daily = std::strstr(api_response, "{"); //go to next array start
             if(daily)
             {
               unsigned int offset = 0;
@@ -462,12 +457,12 @@ void loop()
                   if(t[j].type == 3 && t[j].end - t[j].start == 3)
                   {
                     //could be max[temp], do strcmp:
-                    char test[5] = {0};
-                    memcpy(test, daily+offset+t[j].start, 4);
+                    char test[4] = {0};
+                    memcpy(test, daily+offset+t[j].start, 3);
                     if(strcmp(test, "max") == 0)
                     {
                       //this is max[temp], read daily value
-                      forecast[i].temp = atof(daily+offset+t[j+3].start);
+                      forecast[i].temp = atof(daily+offset+t[j+1].start);
                     }
                   }
                   //humidity
@@ -505,7 +500,6 @@ void loop()
             }
             api_parse_result = 0;
           }
-          
         }
       }
   
