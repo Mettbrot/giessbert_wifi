@@ -3,7 +3,7 @@
 #include <cmath>
 
 
-Plant::Plant(const char* plantname, const unsigned long mlmin, const unsigned long mlmax, const unsigned long mlmaxpot) : _name(plantname), _daily_amount_min_ml(mlmin), _daily_amount_max_ml(mlmax), _max_per_watering(mlmaxpot)
+Plant::Plant(const char* plantname, const unsigned int numPlants, const unsigned long mlmin, const unsigned long mlmax, const unsigned long mlmaxpot) : _name(plantname), _numPlants(numPlants), _daily_amount_min_ml(numPlants*mlmin), _daily_amount_max_ml(numPlants*mlmax), _max_per_watering(numPlants*mlmaxpot)
 {
     if(_daily_amount_min_ml > _daily_amount_max_ml)
     {
@@ -15,6 +15,11 @@ Plant::Plant(const char* plantname, const unsigned long mlmin, const unsigned lo
 const char* Plant::getName() const
 {
     return _name.c_str();
+}
+
+unsigned int Plant::getNumPlants() const
+{
+  return _numPlants;
 }
 
 unsigned long Plant::getDailyMin() const

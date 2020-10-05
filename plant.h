@@ -7,6 +7,7 @@ class Plant
 {
     private:
     String _name;
+    unsigned int _numPlants;
     unsigned long _daily_amount_max_ml;
     unsigned long _daily_amount_min_ml;
     unsigned long _max_per_watering;
@@ -14,8 +15,9 @@ class Plant
     unsigned long _total_amount_ml = 0;
     
     public:
-    Plant(const char* plantname, const unsigned long mlmin, const unsigned long mlmax, const unsigned long mlmaxpot);
+    Plant(const char* plantname, const unsigned int numPlants, const unsigned long mlmin, const unsigned long mlmax, const unsigned long mlmaxpot);
     const char* getName() const;
+    unsigned int getNumPlants() const;
     unsigned long getDailyMin() const;
     unsigned long getDailyMax() const;
     unsigned long calcWaterAmount(double temp, double humidity, int clouds, unsigned long secs_p_day) const;
