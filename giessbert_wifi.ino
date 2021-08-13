@@ -130,15 +130,15 @@ void setup()
   //setup plants statically for now TODO
   got_plant_characteristics = true;
   plants[0] = new Plant("Clematis & Sonnenblume", 2, 50, 500, 300);
-  lps_array[0] = lps * 3.59302325581;
+  lps_array[0] = lps * 0.239166;
   //plants[1] = new Plant("6 Tomaten", 6, 80, 1200, 600);
   lps_array[1] = lps * 923.0 / 1000.0;
   plants[2] = new Plant("Zucchini", 1, 80, 1000, 700);
   lps_array[2] = lps * 0.88942307692;
   //plants[3] = new Plant("Kumquats", 1, 300, 2000, 2500); //alle 3 Tage
-  plants[3] = new Plant("Kräuter", 2, 70, 800, 600);
-  lps_array[3] = lps * 3.21088435374;
-  plants[4] = new Plant("Erdbeeren", 4, 100, 600, 500);
+  plants[3] = new Plant("2 Kräuter", 2, 70, 800, 600);
+  lps_array[3] = lps * 0.277536;
+  plants[4] = new Plant("4 Erdbeeren", 4, 100, 600, 500);
   lps_array[4] = lps * 0.83838383838;
   plants[5] = new Plant("6 Tomaten", 6, 80, 1200, 600);
   lps_array[5] = lps * 1.01425438596;
