@@ -130,7 +130,7 @@ void setup()
   //setup plants statically for now TODO
   got_plant_characteristics = true;
   plants[0] = new Plant("Clematis & Sonnenblume", 2, 50, 500, 300);
-  lps_array[0] = lps * 0.239166;
+  lps_array[0] = lps * 0.76174371;
   //plants[1] = new Plant("6 Tomaten", 6, 80, 1200, 600);
   lps_array[1] = lps * 923.0 / 1000.0;
   plants[2] = new Plant("Zucchini", 1, 80, 1000, 700);
@@ -141,7 +141,7 @@ void setup()
   plants[4] = new Plant("4 Erdbeeren", 4, 100, 600, 500);
   lps_array[4] = lps * 0.83838383838;
   plants[5] = new Plant("6 Tomaten", 6, 80, 1200, 600);
-  lps_array[5] = lps * 1.01425438596;
+  lps_array[5] = lps * 0.82830774853;
  
   pinMode(pinWaterSensor, INPUT_PULLUP);
   //attachInterrupt(digitalPinToInterrupt(pinWaterSensor), disableEnablePump, CHANGE);
